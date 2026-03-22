@@ -2,14 +2,15 @@
 
 namespace Cainy\Laragraph\Edges;
 
-use Symfony\Component\ExpressionLanguage\ExpressionLanguage;
+use Cainy\Laragraph\Engine\Concerns\EvaluatesExpressions;
 
-class Edge
+readonly class Edge
 {
+    use EvaluatesExpressions;
     public function __construct(
-        public readonly string $from,
-        public readonly string $to,
-        public readonly \Closure|string|null $when = null,
+        public string               $from,
+        public string               $to,
+        public \Closure|string|null $when = null,
     ) {}
 
     public function evaluate(array $state): bool
@@ -22,9 +23,7 @@ class Edge
             return (bool) ($this->when)($state);
         }
 
-        $el = new ExpressionLanguage();
-
-        return (bool) $el->evaluate($this->when, ['state' => $state]);
+        return (bool) $this->makeExpressionLanguage()->evaluate($this->when, ['state' => $state]);
     }
 
     public function isSerializable(): bool
