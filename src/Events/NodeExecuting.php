@@ -2,10 +2,23 @@
 
 namespace Cainy\Laragraph\Events;
 
-class NodeExecuting
+use Cainy\Laragraph\Events\Concerns\BroadcastsOnWorkflowChannel;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+
+class NodeExecuting implements ShouldBroadcast
 {
+    use BroadcastsOnWorkflowChannel;
+
     public function __construct(
         public readonly int $runId,
         public readonly string $nodeName,
     ) {}
+
+    public function broadcastWith(): array
+    {
+        return [
+            'runId'    => $this->runId,
+            'nodeName' => $this->nodeName,
+        ];
+    }
 }
