@@ -14,7 +14,7 @@ class TestCase extends Orchestra
         parent::setUp();
 
         Factory::guessFactoryNamesUsing(
-            fn (string $modelName) => 'Cainy\\Laragraph\\Database\\Factories\\' . class_basename($modelName) . 'Factory'
+            fn (string $modelName) => 'Cainy\\Laragraph\\Database\\Factories\\'.class_basename($modelName).'Factory'
         );
     }
 
@@ -30,18 +30,18 @@ class TestCase extends Orchestra
     {
         config()->set('database.default', 'testing');
         config()->set('database.connections.testing', [
-            'driver'   => 'sqlite',
+            'driver' => 'sqlite',
             'database' => ':memory:',
-            'prefix'   => '',
+            'prefix' => '',
         ]);
         config()->set('queue.default', 'sync');
 
         foreach ([
-            __DIR__ . '/../database/migrations',
-            __DIR__ . '/../workbench/database/migrations',
+            __DIR__.'/../database/migrations',
+            __DIR__.'/../workbench/database/migrations',
         ] as $dir) {
             if (is_dir($dir)) {
-                foreach (glob($dir . '/*.php') as $file) {
+                foreach (glob($dir.'/*.php') as $file) {
                     (include $file)->up();
                 }
             }

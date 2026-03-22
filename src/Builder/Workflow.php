@@ -10,6 +10,7 @@ use JsonException;
 class Workflow
 {
     public const string START = '__START__';
+
     public const string END = '__END__';
 
     /** @var array<string, string|Node> */
@@ -30,7 +31,7 @@ class Workflow
 
     public static function create(): self
     {
-        return new self();
+        return new self;
     }
 
     /**
@@ -49,12 +50,12 @@ class Workflow
         }, $data['edges'] ?? []);
 
         return new CompiledWorkflow(
-            nodes:           $data['nodes'] ?? [],
-            edges:           $edges,
-            reducerClass:    $data['reducerClass'] ?? null,
+            nodes: $data['nodes'] ?? [],
+            edges: $edges,
+            reducerClass: $data['reducerClass'] ?? null,
             interruptBefore: $data['interruptBefore'] ?? [],
-            interruptAfter:  $data['interruptAfter'] ?? [],
-            workflowName:    $data['workflowName'] ?? null,
+            interruptAfter: $data['interruptAfter'] ?? [],
+            workflowName: $data['workflowName'] ?? null,
         );
     }
 
@@ -73,7 +74,7 @@ class Workflow
     }
 
     /**
-     * @param string[] $targets Possible destination node names for visualization (optional but recommended).
+     * @param  string[]  $targets  Possible destination node names for visualization (optional but recommended).
      */
     public function branch(string $from, \Closure|string $resolver, array $targets = []): self
     {
@@ -98,8 +99,6 @@ class Workflow
 
     /**
      * Pause execution BEFORE the given node(s) run. On resume the node executes.
-     *
-     * @param string ...$nodeNames
      */
     public function interruptBefore(string ...$nodeNames): self
     {
@@ -110,8 +109,6 @@ class Workflow
 
     /**
      * Pause execution AFTER the given node(s) complete. On resume edges evaluate.
-     *
-     * @param string ...$nodeNames
      */
     public function interruptAfter(string ...$nodeNames): self
     {
@@ -125,12 +122,12 @@ class Workflow
         $this->validate();
 
         return new CompiledWorkflow(
-            nodes:           $this->nodes,
-            edges:           $this->edges,
-            reducerClass:    $this->reducerClass,
+            nodes: $this->nodes,
+            edges: $this->edges,
+            reducerClass: $this->reducerClass,
             interruptBefore: $this->interruptBefore,
-            interruptAfter:  $this->interruptAfter,
-            workflowName:    $this->workflowName,
+            interruptAfter: $this->interruptAfter,
+            workflowName: $this->workflowName,
         );
     }
 
@@ -152,23 +149,23 @@ class Workflow
             }
 
             if ($edge instanceof BranchEdge) {
-                if (!in_array($edge->from, $allNodes, true)) {
+                if (! in_array($edge->from, $allNodes, true)) {
                     throw new \InvalidArgumentException("BranchEdge references unknown 'from' node [{$edge->from}].");
                 }
             } else {
                 if ($edge->to === self::START) {
                     throw new \InvalidArgumentException('Edges to __START__ are not allowed.');
                 }
-                if (!in_array($edge->from, $allNodes, true)) {
+                if (! in_array($edge->from, $allNodes, true)) {
                     throw new \InvalidArgumentException("Edge references unknown 'from' node [{$edge->from}].");
                 }
-                if (!in_array($edge->to, $allNodes, true)) {
+                if (! in_array($edge->to, $allNodes, true)) {
                     throw new \InvalidArgumentException("Edge references unknown 'to' node [{$edge->to}].");
                 }
             }
         }
 
-        if (!$hasStartEdge) {
+        if (! $hasStartEdge) {
             throw new \InvalidArgumentException('Workflow must have at least one edge from __START__.');
         }
     }
@@ -179,7 +176,7 @@ class Workflow
     public function toJson(): string
     {
         foreach ($this->edges as $edge) {
-            if (!$edge->isSerializable()) {
+            if (! $edge->isSerializable()) {
                 throw new \RuntimeException('Cannot serialize workflow: one or more edges contain Closure conditions.');
             }
         }
@@ -188,15 +185,15 @@ class Workflow
             return is_string($node) ? $node : $node::class;
         }, $this->nodes);
 
-        $serializedEdges = array_map(fn($edge) => $edge->toArray(), $this->edges);
+        $serializedEdges = array_map(fn ($edge) => $edge->toArray(), $this->edges);
 
         return json_encode([
-            'nodes'           => $serializedNodes,
-            'edges'           => $serializedEdges,
-            'reducerClass'    => $this->reducerClass,
-            'workflowName'    => $this->workflowName,
+            'nodes' => $serializedNodes,
+            'edges' => $serializedEdges,
+            'reducerClass' => $this->reducerClass,
+            'workflowName' => $this->workflowName,
             'interruptBefore' => $this->interruptBefore,
-            'interruptAfter'  => $this->interruptAfter,
+            'interruptAfter' => $this->interruptAfter,
         ], JSON_THROW_ON_ERROR);
     }
 }

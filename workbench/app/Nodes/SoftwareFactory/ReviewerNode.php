@@ -11,13 +11,13 @@ class ReviewerNode implements Node
     {
         usleep(400_000); // Simulate LLM latency
 
-        $code   = $state['code'] ?? '(no code)';
-        $review = "Code review: The implementation is correct for small values of n. "
-                . "Note: this recursive implementation has O(2^n) time complexity. "
-                . "Consider memoization for production use.";
+        $code = $state['code'] ?? '(no code)';
+        $review = 'Code review: The implementation is correct for small values of n. '
+                .'Note: this recursive implementation has O(2^n) time complexity. '
+                .'Consider memoization for production use.';
 
         return [
-            'review'   => $review,
+            'review' => $review,
             'messages' => [
                 ['role' => 'assistant', 'content' => $review],
             ],

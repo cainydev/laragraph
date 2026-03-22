@@ -17,7 +17,7 @@ class WorkflowStarted implements ShouldBroadcast
     public function broadcastWith(): array
     {
         return [
-            'runId'        => $this->runId,
+            'runId' => $this->runId,
             'workflowName' => $this->workflowName,
         ];
     }

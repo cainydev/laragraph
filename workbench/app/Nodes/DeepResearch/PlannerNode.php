@@ -22,7 +22,7 @@ class PlannerNode implements Node
 
         // Return the queries; the branch edge will fan out via Send
         return [
-            'queries'  => $queries,
+            'queries' => $queries,
             'messages' => [
                 ['role' => 'assistant', 'content' => implode("\n", $queries)],
             ],

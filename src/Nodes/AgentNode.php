@@ -30,14 +30,14 @@ abstract class AgentNode implements Node
             $request = $request->withSystemPrompt($this->systemPrompt);
         }
 
-        if (!empty($messages)) {
+        if (! empty($messages)) {
             $request = $request->withMessages($messages);
         } else {
             $request = $request->withPrompt($this->getPrompt($state));
         }
 
         $tools = $this->tools();
-        if (!empty($tools)) {
+        if (! empty($tools)) {
             $request = $request->withTools($tools);
         }
 
@@ -45,8 +45,8 @@ abstract class AgentNode implements Node
 
         $assistantMessage = ['role' => 'assistant', 'content' => $response->text];
 
-        if (!empty($response->toolCalls)) {
-            $assistantMessage['tool_calls'] = array_map(fn($tc) => [
+        if (! empty($response->toolCalls)) {
+            $assistantMessage['tool_calls'] = array_map(fn ($tc) => [
                 'id' => $tc->id,
                 'name' => $tc->name,
                 'arguments' => $tc->arguments(),

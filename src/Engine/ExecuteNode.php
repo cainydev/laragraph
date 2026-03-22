@@ -7,7 +7,6 @@ use Cainy\Laragraph\Builder\Workflow;
 use Cainy\Laragraph\Contracts\HasRetryPolicy;
 use Cainy\Laragraph\Contracts\HasTags;
 use Cainy\Laragraph\Contracts\HasTimeout;
-use Cainy\Laragraph\Engine\NodeExecutionContext;
 use Cainy\Laragraph\Engine\Concerns\EvaluatesExpressions;
 use Cainy\Laragraph\Engine\Concerns\ManagesState;
 use Cainy\Laragraph\Engine\Concerns\TracksPointers;
@@ -19,6 +18,7 @@ use Cainy\Laragraph\Events\WorkflowCompleted;
 use Cainy\Laragraph\Events\WorkflowFailed;
 use Cainy\Laragraph\Exceptions\NodeExecutionException;
 use Cainy\Laragraph\Exceptions\NodePausedException;
+use Cainy\Laragraph\Laragraph;
 use Cainy\Laragraph\Models\WorkflowRun;
 use Cainy\Laragraph\Routing\Send;
 use Illuminate\Bus\Queueable;
@@ -36,10 +36,12 @@ use Throwable;
 class ExecuteNode implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-    use ManagesState, TracksPointers, EvaluatesExpressions;
+    use EvaluatesExpressions, ManagesState, TracksPointers;
 
     public int $tries;
+
     public int $timeout;
+
     public array $backoffIntervals = [];
 
     public function __construct(
@@ -47,7 +49,7 @@ class ExecuteNode implements ShouldQueue
         public readonly string $nodeName,
         public readonly ?array $isolatedPayload = null,
     ) {
-        $this->tries   = config('laragraph.max_node_attempts', 3);
+        $this->tries = config('laragraph.max_node_attempts', 3);
         $this->timeout = config('laragraph.node_timeout', 60);
         $this->onQueue(config('laragraph.queue', 'default'));
         $connection = config('laragraph.connection');
@@ -67,9 +69,9 @@ class ExecuteNode implements ShouldQueue
     public function handle(): void
     {
         /** @var array<string|Send> $nextTargets */
-        $nextTargets    = [];
-        $completed      = false;
-        $parentRunId    = null;
+        $nextTargets = [];
+        $completed = false;
+        $parentRunId = null;
         $parentNodeName = null;
 
         DB::transaction(function () use (&$nextTargets, &$completed, &$parentRunId, &$parentNodeName): void {
@@ -81,10 +83,10 @@ class ExecuteNode implements ShouldQueue
             }
 
             $workflow = $this->hydrateWorkflow($run);
-            $reducer  = $workflow->getReducer();
+            $reducer = $workflow->getReducer();
 
             $interruptMarker = $run->state['__interrupt'] ?? null;
-            $resumingAfter   = $interruptMarker === $this->nodeName
+            $resumingAfter = $interruptMarker === $this->nodeName
                 && $workflow->shouldInterruptAfter($this->nodeName);
 
             // If resuming from interrupt_after, the node already ran — skip to edges.
@@ -99,8 +101,8 @@ class ExecuteNode implements ShouldQueue
                     $this->timeout = $node->timeout();
                 }
                 if ($node instanceof HasRetryPolicy) {
-                    $policy                 = $node->retryPolicy();
-                    $this->tries            = $policy->maxAttempts;
+                    $policy = $node->retryPolicy();
+                    $this->tries = $policy->maxAttempts;
                     $this->backoffIntervals = $policy->calculateBackoff();
                 }
 
@@ -109,7 +111,7 @@ class ExecuteNode implements ShouldQueue
 
                 // interrupt_before: pause BEFORE node runs (unless resuming from this interrupt)
                 if (! $resumingBefore && $workflow->shouldInterruptBefore($this->nodeName)) {
-                    $run->state  = array_merge($run->state, ['__interrupt' => $this->nodeName]);
+                    $run->state = array_merge($run->state, ['__interrupt' => $this->nodeName]);
                     $run->status = RunStatus::Paused;
                     $run->save();
 
@@ -125,11 +127,12 @@ class ExecuteNode implements ShouldQueue
                 } catch (NodePausedException $e) {
                     // Apply any state the node wants to persist (e.g. child run ID) before pausing.
                     $pauseState = array_merge($run->state, $e->stateMutation, ['__interrupt' => $this->nodeName]);
-                    $run->state  = $pauseState;
+                    $run->state = $pauseState;
                     $run->status = RunStatus::Paused;
                     $run->save();
+
                     return;
-                } catch (\Throwable $e) {
+                } catch (Throwable $e) {
                     throw new NodeExecutionException($this->nodeName, $this->runId, previous: $e);
                 }
 
@@ -143,9 +146,9 @@ class ExecuteNode implements ShouldQueue
                 // interrupt_after: pause AFTER node runs but BEFORE edges evaluate
                 if ($workflow->shouldInterruptAfter($this->nodeName)) {
                     $newState['__interrupt'] = $this->nodeName;
-                    $run->state   = $newState;
+                    $run->state = $newState;
                     $run->current = $this->nodeName;
-                    $run->status  = RunStatus::Paused;
+                    $run->status = RunStatus::Paused;
                     $run->save();
 
                     return;
@@ -174,9 +177,9 @@ class ExecuteNode implements ShouldQueue
             $run->current = $this->nodeName;
 
             if (! $this->hasActivePointers($run)) {
-                $run->status    = RunStatus::Completed;
-                $completed      = true;
-                $parentRunId    = $run->parent_run_id;
+                $run->status = RunStatus::Completed;
+                $completed = true;
+                $parentRunId = $run->parent_run_id;
                 $parentNodeName = $run->parent_node_name;
             } else {
                 $run->status = RunStatus::Running;
@@ -190,7 +193,7 @@ class ExecuteNode implements ShouldQueue
 
             // If this is a child workflow, resume the waiting parent node.
             if ($parentRunId !== null && $parentNodeName !== null) {
-                app(\Cainy\Laragraph\Laragraph::class)->resumeFromChild($parentRunId, $parentNodeName);
+                app(Laragraph::class)->resumeFromChild($parentRunId, $parentNodeName);
             }
 
             return;
@@ -213,7 +216,7 @@ class ExecuteNode implements ShouldQueue
     /**
      * @throws Throwable
      */
-    public function failed(\Throwable $exception): void
+    public function failed(Throwable $exception): void
     {
         $root = $exception->getPrevious() ?? $exception;
 
@@ -229,10 +232,10 @@ class ExecuteNode implements ShouldQueue
             $reducer = $this->hydrateWorkflow($run)->getReducer();
             $this->applyMutation($run, [
                 'error' => [
-                    'node'    => $this->nodeName,
+                    'node' => $this->nodeName,
                     'message' => $root->getMessage(),
-                    'file'    => $root->getFile(),
-                    'line'    => $root->getLine(),
+                    'file' => $root->getFile(),
+                    'line' => $root->getLine(),
                 ],
             ], $reducer);
 

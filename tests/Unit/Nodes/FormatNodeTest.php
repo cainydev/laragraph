@@ -14,7 +14,7 @@ it('transforms state via closure', function () {
 
 it('receives isolatedPayload as second argument', function () {
     $node = new FormatNode(fn (array $state, ?array $payload) => [
-        'merged' => ($payload['value'] ?? 'none') . ':' . ($state['prefix'] ?? ''),
+        'merged' => ($payload['value'] ?? 'none').':'.($state['prefix'] ?? ''),
     ]);
 
     $mutation = $node->handle(makeContext(isolatedPayload: ['value' => 'data']), ['prefix' => 'pre']);

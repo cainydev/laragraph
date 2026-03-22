@@ -3,7 +3,7 @@
 use Cainy\Laragraph\Reducers\SmartReducer;
 
 beforeEach(function () {
-    $this->reducer = new SmartReducer();
+    $this->reducer = new SmartReducer;
 });
 
 it('overwrites scalar values', function () {

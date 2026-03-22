@@ -27,7 +27,7 @@ function makeContext(int $runId = 1, string $nodeName = 'test', int $attempt = 1
         nodeName: $nodeName,
         attempt: $attempt,
         maxAttempts: 3,
-        createdAt: new \DateTimeImmutable(),
+        createdAt: new \DateTimeImmutable,
         isolatedPayload: $isolatedPayload,
     );
 }

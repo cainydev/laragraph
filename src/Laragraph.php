@@ -25,8 +25,7 @@ readonly class Laragraph
 
     public function __construct(
         private WorkflowRegistry $registry,
-    ) {
-    }
+    ) {}
 
     /**
      * Start a new workflow run by name.
@@ -61,7 +60,7 @@ readonly class Laragraph
     /**
      * Push pointer entries for a mix of string node names and Send objects.
      *
-     * @param array<string|Send> $targets
+     * @param  array<string|Send>  $targets
      */
     private function pushTargetPointers(WorkflowRun $run, array $targets): void
     {
@@ -77,7 +76,7 @@ readonly class Laragraph
     /**
      * Dispatch ExecuteNode for a mix of string node names and Send objects.
      *
-     * @param array<string|Send> $targets
+     * @param  array<string|Send>  $targets
      */
     private function dispatchTargets(int $runId, array $targets): void
     {
@@ -103,10 +102,10 @@ readonly class Laragraph
 
         $run = DB::transaction(function () use ($key, $snapshot, $initialState, $startTargets): WorkflowRun {
             $run = WorkflowRun::create([
-                'key'      => $key,
+                'key' => $key,
                 'snapshot' => json_decode($snapshot, true),
-                'state'    => $initialState,
-                'status'   => RunStatus::Running,
+                'state' => $initialState,
+                'status' => RunStatus::Running,
             ]);
 
             $this->pushTargetPointers($run, $startTargets);
@@ -133,12 +132,12 @@ readonly class Laragraph
 
         $run = DB::transaction(function () use ($compiled, $initialState, $startTargets, $parentRunId, $parentNodeName, $key): WorkflowRun {
             $run = WorkflowRun::create([
-                'parent_run_id'    => $parentRunId,
+                'parent_run_id' => $parentRunId,
                 'parent_node_name' => $parentNodeName,
-                'key'              => $key,
-                'snapshot'         => $compiled->toArray(),
-                'state'            => $initialState,
-                'status'           => RunStatus::Running,
+                'key' => $key,
+                'snapshot' => $compiled->toArray(),
+                'state' => $initialState,
+                'status' => RunStatus::Running,
             ]);
 
             $this->pushTargetPointers($run, $startTargets);
@@ -162,7 +161,7 @@ readonly class Laragraph
      */
     public function resumeFromChild(int $parentRunId, string $parentNodeName): void
     {
-        DB::transaction(function () use ($parentRunId, $parentNodeName): void {
+        DB::transaction(function () use ($parentRunId): void {
             /** @var WorkflowRun $run */
             $run = WorkflowRun::lockForUpdate()->findOrFail($parentRunId);
 
@@ -245,7 +244,7 @@ readonly class Laragraph
                 throw InvalidStatusTransition::notPaused($run);
             }
 
-            if (!empty($additionalState)) {
+            if (! empty($additionalState)) {
                 $run->state = array_merge($run->state, $additionalState);
             }
 

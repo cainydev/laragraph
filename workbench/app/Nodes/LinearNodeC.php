@@ -9,6 +9,6 @@ class LinearNodeC implements Node
 {
     public function handle(NodeExecutionContext $context, array $state): array
     {
-        return ['log' => ['node-c processed at ' . now()->toISOString()]];
+        return ['log' => ['node-c processed at '.now()->toISOString()]];
     }
 }

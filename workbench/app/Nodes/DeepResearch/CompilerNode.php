@@ -21,14 +21,14 @@ class CompilerNode implements Node
             return [];
         }
 
-        $report = "# Research Report\n\n" . implode("\n\n", array_map(
-            fn ($i, $f) => "## Finding " . ($i + 1) . "\n{$f}",
+        $report = "# Research Report\n\n".implode("\n\n", array_map(
+            fn ($i, $f) => '## Finding '.($i + 1)."\n{$f}",
             array_keys($findings),
             $findings,
         ));
 
         return [
-            'report'   => $report,
+            'report' => $report,
             'messages' => [
                 ['role' => 'assistant', 'content' => $report],
             ],

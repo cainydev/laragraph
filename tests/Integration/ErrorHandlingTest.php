@@ -2,6 +2,7 @@
 
 use Cainy\Laragraph\Builder\Workflow;
 use Cainy\Laragraph\Contracts\Node;
+use Cainy\Laragraph\Engine\NodeExecutionContext;
 use Cainy\Laragraph\Enums\RunStatus;
 use Cainy\Laragraph\Facades\Laragraph;
 use Cainy\Laragraph\Models\WorkflowRun;
@@ -17,7 +18,7 @@ function makeFailingNodeInstance(): Node
             return 'failing-node';
         }
 
-        public function handle(\Cainy\Laragraph\Engine\NodeExecutionContext $context, array $state): array
+        public function handle(NodeExecutionContext $context, array $state): array
         {
             throw new RuntimeException('Intentional failure');
         }
@@ -32,7 +33,7 @@ it('sets run status to Failed when a node throws', function () {
 
     try {
         Laragraph::start('fail-test');
-    } catch (\Throwable) {
+    } catch (Throwable) {
         // Sync queue propagates the exception
     }
 
@@ -48,7 +49,7 @@ it('records error details in state on failure', function () {
 
     try {
         Laragraph::start('fail-error-test');
-    } catch (\Throwable) {
+    } catch (Throwable) {
         // expected
     }
 
@@ -66,7 +67,7 @@ it('rejects resuming a failed workflow', function () {
 
     try {
         Laragraph::start('fail-resume-test');
-    } catch (\Throwable) {
+    } catch (Throwable) {
         // expected
     }
 

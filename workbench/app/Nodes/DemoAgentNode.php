@@ -14,8 +14,8 @@ class DemoAgentNode implements Node
         return [
             'messages' => [
                 [
-                    'role'       => 'assistant',
-                    'content'    => 'Let me check the weather in London for you.',
+                    'role' => 'assistant',
+                    'content' => 'Let me check the weather in London for you.',
                     'tool_calls' => [
                         ['id' => 'call_sim_001', 'name' => 'get_weather', 'arguments' => ['city' => 'London']],
                     ],

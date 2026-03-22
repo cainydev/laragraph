@@ -14,7 +14,7 @@ class WorkflowRegistry
     private array $compiled = [];
 
     /**
-     * @param array<string, string|callable> $definitions
+     * @param  array<string, string|callable>  $definitions
      */
     public function __construct(array $definitions = [])
     {

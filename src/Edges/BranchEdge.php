@@ -7,9 +7,9 @@ use Cainy\Laragraph\Engine\Concerns\EvaluatesExpressions;
 class BranchEdge
 {
     use EvaluatesExpressions;
+
     /**
-     * @param \Closure|string $resolver
-     * @param string[]        $targets  Possible destination node names (used for visualization).
+     * @param  string[]  $targets  Possible destination node names (used for visualization).
      */
     public function __construct(
         public readonly string $from,
@@ -40,10 +40,10 @@ class BranchEdge
     {
         if ($this->isSerializable()) {
             return [
-                'type'     => 'branch',
-                'from'     => $this->from,
+                'type' => 'branch',
+                'from' => $this->from,
                 'resolver' => $this->resolver,
-                'targets'  => $this->targets,
+                'targets' => $this->targets,
             ];
         }
 
@@ -51,13 +51,13 @@ class BranchEdge
         if (empty($this->targets)) {
             throw new \RuntimeException(
                 "Cannot serialize BranchEdge [{$this->from}]: 'resolver' is a Closure and no 'targets' were declared. ".
-                "Pass targets to ->branch() so the graph can be visualized."
+                'Pass targets to ->branch() so the graph can be visualized.'
             );
         }
 
         return [
-            'type'    => 'branch',
-            'from'    => $this->from,
+            'type' => 'branch',
+            'from' => $this->from,
             'targets' => $this->targets,
         ];
     }

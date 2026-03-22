@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Event;
 use function Cainy\Laragraph\Tests\makeContext;
 
 it('throws NodePausedException', function () {
-    $node = new HumanInterruptNode();
+    $node = new HumanInterruptNode;
 
     expect(fn () => $node->handle(makeContext(), []))->toThrow(NodePausedException::class);
 });
@@ -16,7 +16,7 @@ it('throws NodePausedException', function () {
 it('dispatches HumanInterventionRequired event before throwing', function () {
     Event::fake();
 
-    $node = new HumanInterruptNode();
+    $node = new HumanInterruptNode;
 
     try {
         $node->handle(makeContext(runId: 42), []);

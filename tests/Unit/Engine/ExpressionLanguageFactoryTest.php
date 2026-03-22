@@ -2,12 +2,14 @@
 
 use Cainy\Laragraph\Engine\Concerns\EvaluatesExpressions;
 use Cainy\Laragraph\Routing\Send;
+use Symfony\Component\ExpressionLanguage\ExpressionLanguage;
 
 // Minimal test double that exposes the trait's protected method publicly
-$factory = new class {
+$factory = new class
+{
     use EvaluatesExpressions;
 
-    public function make(): \Symfony\Component\ExpressionLanguage\ExpressionLanguage
+    public function make(): ExpressionLanguage
     {
         return $this->makeExpressionLanguage();
     }

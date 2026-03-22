@@ -7,9 +7,10 @@ use Cainy\Laragraph\Engine\Concerns\EvaluatesExpressions;
 readonly class Edge
 {
     use EvaluatesExpressions;
+
     public function __construct(
-        public string               $from,
-        public string               $to,
+        public string $from,
+        public string $to,
         public \Closure|string|null $when = null,
     ) {}
 
@@ -40,7 +41,7 @@ readonly class Edge
         return [
             'type' => 'edge',
             'from' => $this->from,
-            'to'   => $this->to,
+            'to' => $this->to,
             'when' => $this->when,
         ];
     }

@@ -11,12 +11,12 @@ trait BroadcastsOnWorkflowChannel
     public function broadcastOn(): array
     {
         $prefix = config('laragraph.broadcasting.channel_prefix', 'workflow.');
-        $name   = $prefix . $this->runId;
+        $name = $prefix.$this->runId;
 
         return match (config('laragraph.broadcasting.channel_type', 'private')) {
-            'public'   => [new Channel($name)],
+            'public' => [new Channel($name)],
             'presence' => [new PresenceChannel($name)],
-            default    => [new PrivateChannel($name)],
+            default => [new PrivateChannel($name)],
         };
     }
 

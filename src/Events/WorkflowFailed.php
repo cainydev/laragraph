@@ -17,7 +17,7 @@ class WorkflowFailed implements ShouldBroadcast
     public function broadcastWith(): array
     {
         return [
-            'runId'            => $this->runId,
+            'runId' => $this->runId,
             'exceptionMessage' => $this->exception->getMessage(),
         ];
     }

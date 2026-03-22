@@ -9,25 +9,27 @@ use Cainy\Laragraph\Edges\BranchEdge;
 use Cainy\Laragraph\Edges\Edge;
 use Cainy\Laragraph\Engine\NodeExecutionContext;
 use Cainy\Laragraph\Exceptions\NodePausedException;
+use Cainy\Laragraph\Laragraph;
+use Cainy\Laragraph\Models\WorkflowRun;
 use Cainy\Laragraph\Routing\Send;
 
-class CompiledWorkflow implements Node, HasName
+class CompiledWorkflow implements HasName, Node
 {
     /** @var array<string, list<Edge|BranchEdge>> */
     private array $edgeIndex = [];
 
     /**
-     * @param array<string, string|Node> $nodes
-     * @param list<Edge|BranchEdge>      $edges
-     * @param string[]                   $interruptBefore
-     * @param string[]                   $interruptAfter
+     * @param  array<string, string|Node>  $nodes
+     * @param  list<Edge|BranchEdge>  $edges
+     * @param  string[]  $interruptBefore
+     * @param  string[]  $interruptAfter
      */
     public function __construct(
-        private readonly array   $nodes,
-        private readonly array   $edges,
+        private readonly array $nodes,
+        private readonly array $edges,
         private readonly ?string $reducerClass = null,
-        private readonly array   $interruptBefore = [],
-        private readonly array   $interruptAfter = [],
+        private readonly array $interruptBefore = [],
+        private readonly array $interruptAfter = [],
         private readonly ?string $workflowName = null,
     ) {
         foreach ($edges as $edge) {
@@ -52,27 +54,27 @@ class CompiledWorkflow implements Node, HasName
     public function handle(NodeExecutionContext $context, array $state): array
     {
         $childRunKey = "__child_run_{$context->nodeName}";
-        $childRunId  = $state[$childRunKey] ?? null;
+        $childRunId = $state[$childRunKey] ?? null;
 
         if ($childRunId === null) {
             // Spawn the child and pause the parent.
-            $childRun = app(\Cainy\Laragraph\Laragraph::class)->startChildWorkflow(
-                compiled:       $this,
-                initialState:   $state,
-                parentRunId:    $context->runId,
+            $childRun = app(Laragraph::class)->startChildWorkflow(
+                compiled: $this,
+                initialState: $state,
+                parentRunId: $context->runId,
                 parentNodeName: $context->nodeName,
-                key:            $context->workflowKey . '.' . $context->nodeName,
+                key: $context->workflowKey.'.'.$context->nodeName,
             );
 
             throw new NodePausedException(
-                nodeName:      $context->nodeName,
+                nodeName: $context->nodeName,
                 stateMutation: [$childRunKey => $childRun->id],
             );
         }
 
         // Resuming after child completed — diff child's final state against what we sent in.
-        $childRun    = \Cainy\Laragraph\Models\WorkflowRun::findOrFail($childRunId);
-        $delta       = array_diff_assoc($childRun->state, $state);
+        $childRun = WorkflowRun::findOrFail($childRunId);
+        $delta = array_diff_assoc($childRun->state, $state);
         $delta[$childRunKey] = null; // Remove the child reference marker
 
         return $delta;
@@ -96,11 +98,11 @@ class CompiledWorkflow implements Node, HasName
         $serializedEdges = array_map(fn ($edge) => $edge->toArray(), $this->edges);
 
         return [
-            'nodes'           => $serializedNodes,
-            'edges'           => $serializedEdges,
-            'reducerClass'    => $this->reducerClass,
+            'nodes' => $serializedNodes,
+            'edges' => $serializedEdges,
+            'reducerClass' => $this->reducerClass,
             'interruptBefore' => $this->interruptBefore,
-            'interruptAfter'  => $this->interruptAfter,
+            'interruptAfter' => $this->interruptAfter,
         ];
     }
 
@@ -125,7 +127,7 @@ class CompiledWorkflow implements Node, HasName
      */
     public function resolveNextNodes(string $fromNode, array $state): array
     {
-        $edges   = $this->edgeIndex[$fromNode] ?? [];
+        $edges = $this->edgeIndex[$fromNode] ?? [];
         $targets = [];
 
         foreach ($edges as $edge) {

@@ -14,10 +14,10 @@ class PublishNode implements Node
         $draft = $state['draft'] ?? '(no draft)';
 
         return [
-            'published'    => true,
+            'published' => true,
             'published_at' => now()->toISOString(),
-            'tweet'        => $draft,
-            'messages'     => [
+            'tweet' => $draft,
+            'messages' => [
                 ['role' => 'assistant', 'content' => "Published: {$draft}"],
             ],
         ];

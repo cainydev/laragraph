@@ -16,9 +16,7 @@ use Cainy\Laragraph\Engine\NodeExecutionContext;
  */
 readonly class FormatNode implements Node
 {
-    public function __construct(private \Closure $transform)
-    {
-    }
+    public function __construct(private \Closure $transform) {}
 
     public function handle(NodeExecutionContext $context, array $state): array
     {

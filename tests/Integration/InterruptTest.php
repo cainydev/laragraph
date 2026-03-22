@@ -75,7 +75,8 @@ it('interrupt_after resumes and continues to next node', function () {
 });
 
 it('interrupt_after works in a loop with repeated pauses', function () {
-    $counter = new class {
+    $counter = new class
+    {
         public int $calls = 0;
     };
 

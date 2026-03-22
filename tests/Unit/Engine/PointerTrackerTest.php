@@ -4,7 +4,8 @@ use Cainy\Laragraph\Engine\Concerns\TracksPointers;
 use Cainy\Laragraph\Models\WorkflowRun;
 
 // Minimal test double that exposes the trait's protected methods publicly
-$tracker = new class {
+$tracker = new class
+{
     use TracksPointers;
 
     public function push(WorkflowRun $run, string ...$names): void
@@ -26,8 +27,8 @@ $tracker = new class {
 beforeEach(function () use ($tracker) {
     $this->tracker = $tracker;
     $this->run = WorkflowRun::create([
-        'key'    => 'test',
-        'state'  => [],
+        'key' => 'test',
+        'state' => [],
         'status' => 'running',
     ]);
 });

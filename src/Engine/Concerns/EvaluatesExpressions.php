@@ -10,7 +10,7 @@ trait EvaluatesExpressions
 {
     protected function makeExpressionLanguage(): ExpressionLanguage
     {
-        $el = new ExpressionLanguage();
+        $el = new ExpressionLanguage;
 
         // has_tool_calls(messages) — true if the last message contains tool_calls
         $el->addFunction(new ExpressionFunction(

@@ -34,7 +34,7 @@ it('Send objects dispatch with isolated payloads via branch', function () {
     registerTestWorkflow('send-test', Workflow::create()
         ->addNode('dispatcher', new FormatNode(fn () => []))
         ->addNode('worker', new FormatNode(fn (array $state, ?array $payload) => [
-            'results' => [($payload['item'] ?? 'none') . ' processed'],
+            'results' => [($payload['item'] ?? 'none').' processed'],
         ]))
         ->addNode('collector', new FormatNode(fn (array $state) => [
             'report' => implode(', ', $state['results'] ?? []),
@@ -58,10 +58,10 @@ it('Send objects dispatch with isolated payloads via branch', function () {
 it('Send objects work from START via branch', function () {
     registerTestWorkflow('send-from-start', Workflow::create()
         ->addNode('worker', new FormatNode(fn (array $state, ?array $payload) => [
-            'results' => [($payload['item'] ?? 'none') . ' done'],
+            'results' => [($payload['item'] ?? 'none').' done'],
         ]))
         ->addNode('finish', new FormatNode(fn (array $state) => [
-            'summary' => count($state['results'] ?? []) . ' items',
+            'summary' => count($state['results'] ?? []).' items',
         ]))
         ->branch(Workflow::START, fn (array $state) => array_map(
             fn ($item) => new Send('worker', ['item' => $item]),

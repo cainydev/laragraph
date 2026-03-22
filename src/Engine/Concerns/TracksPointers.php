@@ -18,7 +18,7 @@ trait TracksPointers
     protected function removePointer(WorkflowRun $run, string $nodeName): void
     {
         $pointers = $run->active_pointers ?? [];
-        $index    = array_search($nodeName, $pointers, true);
+        $index = array_search($nodeName, $pointers, true);
         if ($index !== false) {
             array_splice($pointers, $index, 1);
         }

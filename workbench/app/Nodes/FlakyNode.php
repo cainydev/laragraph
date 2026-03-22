@@ -17,7 +17,7 @@ class FlakyNode implements Node
         }
 
         return [
-            'attempt'   => $attempt,
+            'attempt' => $attempt,
             'recovered' => true,
         ];
     }

@@ -19,10 +19,10 @@ class NodeCompleted implements ShouldBroadcast
     public function broadcastWith(): array
     {
         return [
-            'runId'    => $this->runId,
+            'runId' => $this->runId,
             'nodeName' => $this->nodeName,
             'mutation' => $this->mutation,
-            'tags'     => $this->tags,
+            'tags' => $this->tags,
         ];
     }
 }

@@ -3,7 +3,6 @@
 use Cainy\Laragraph\Builder\Workflow;
 use Cainy\Laragraph\Enums\RunStatus;
 use Cainy\Laragraph\Facades\Laragraph;
-use Cainy\Laragraph\Models\WorkflowRun;
 use Cainy\Laragraph\Nodes\FormatNode;
 
 use function Cainy\Laragraph\Tests\registerTestWorkflow;

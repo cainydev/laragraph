@@ -19,7 +19,7 @@ function fibonacci(int $n): int {
 PHP;
 
         return [
-            'code'     => $code,
+            'code' => $code,
             'messages' => [
                 ['role' => 'assistant', 'content' => "Here is the PHP code:\n```php\n{$code}\n```"],
             ],

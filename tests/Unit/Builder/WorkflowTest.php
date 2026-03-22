@@ -2,6 +2,7 @@
 
 use Cainy\Laragraph\Builder\Workflow;
 use Cainy\Laragraph\Contracts\Node;
+use Cainy\Laragraph\Engine\NodeExecutionContext;
 use Cainy\Laragraph\Reducers\SmartReducer;
 
 function makeStubNode(): Node
@@ -13,7 +14,7 @@ function makeStubNode(): Node
             return 'stub';
         }
 
-        public function handle(\Cainy\Laragraph\Engine\NodeExecutionContext $context, array $state): array
+        public function handle(NodeExecutionContext $context, array $state): array
         {
             return [];
         }

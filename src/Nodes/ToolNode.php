@@ -14,7 +14,7 @@ abstract class ToolNode implements Node
 
     public function handle(NodeExecutionContext $context, array $state): array
     {
-        $messages    = $state['messages'] ?? [];
+        $messages = $state['messages'] ?? [];
         $lastMessage = ! empty($messages) ? end($messages) : null;
 
         if ($lastMessage === null) {
@@ -31,9 +31,9 @@ abstract class ToolNode implements Node
         $results = [];
 
         foreach ($toolCalls as $call) {
-            $name      = $call['name'] ?? '';
+            $name = $call['name'] ?? '';
             $arguments = $call['arguments'] ?? [];
-            $id        = $call['id'] ?? null;
+            $id = $call['id'] ?? null;
 
             if (! isset($map[$name])) {
                 $output = "Tool [{$name}] not found.";
@@ -46,9 +46,9 @@ abstract class ToolNode implements Node
             }
 
             $results[] = [
-                'role'        => 'tool',
+                'role' => 'tool',
                 'tool_use_id' => $id,
-                'content'     => (string) $output,
+                'content' => (string) $output,
             ];
         }
 

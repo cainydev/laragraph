@@ -9,9 +9,13 @@ use Throwable;
 class RetryPolicy
 {
     public float $initialInterval;
+
     public float $backoffFactor;
+
     public float $maxInterval;
+
     public int $maxAttempts;
+
     public bool $jitter;
 
     public function __construct(
@@ -24,15 +28,16 @@ class RetryPolicy
         public array|Closure|null $retryOn = null,
     ) {
         $this->initialInterval = $initialInterval ?? config('laragraph.retry.initial_interval', 0.5);
-        $this->backoffFactor   = $backoffFactor ?? config('laragraph.retry.backoff_factor', 2.0);
-        $this->maxInterval     = $maxInterval ?? config('laragraph.retry.max_interval', 128.0);
-        $this->maxAttempts     = $maxAttempts ?? config('laragraph.max_node_attempts', 3);
-        $this->jitter          = $jitter ?? config('laragraph.retry.jitter', true);
+        $this->backoffFactor = $backoffFactor ?? config('laragraph.retry.backoff_factor', 2.0);
+        $this->maxInterval = $maxInterval ?? config('laragraph.retry.max_interval', 128.0);
+        $this->maxAttempts = $maxAttempts ?? config('laragraph.max_node_attempts', 3);
+        $this->jitter = $jitter ?? config('laragraph.retry.jitter', true);
     }
 
     /**
      * Calculates the array of wait times (in seconds) for Laravel's queue worker.
      * Laravel expects an array of integers for the backoff intervals.
+     *
      * * @return array<int>
      */
     public function calculateBackoff(): array
@@ -48,7 +53,7 @@ class RetryPolicy
                 // We want up to 25% jitter in either direction
                 $jitterAmount = $interval * 0.25;
 
-                $randomizer = new Randomizer();
+                $randomizer = new Randomizer;
                 $randomJitter = $randomizer->getFloat(-$jitterAmount, $jitterAmount);
 
                 $interval += $randomJitter;
@@ -76,6 +81,6 @@ class RetryPolicy
             return ($this->retryOn)($e);
         }
 
-        return array_any($this->retryOn, fn($exceptionClass) => $e instanceof $exceptionClass);
+        return array_any($this->retryOn, fn ($exceptionClass) => $e instanceof $exceptionClass);
     }
 }

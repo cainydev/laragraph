@@ -6,6 +6,7 @@ use Cainy\Laragraph\Contracts\Node;
 use Cainy\Laragraph\Contracts\StateReducerInterface;
 use Cainy\Laragraph\Edges\BranchEdge;
 use Cainy\Laragraph\Edges\Edge;
+use Cainy\Laragraph\Engine\NodeExecutionContext;
 use Cainy\Laragraph\Reducers\SmartReducer;
 
 function makeTestNode(string $name = 'test'): Node
@@ -19,7 +20,7 @@ function makeTestNode(string $name = 'test'): Node
             return $this->name;
         }
 
-        public function handle(\Cainy\Laragraph\Engine\NodeExecutionContext $context, array $state): array
+        public function handle(NodeExecutionContext $context, array $state): array
         {
             return [];
         }

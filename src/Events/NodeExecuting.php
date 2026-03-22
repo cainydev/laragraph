@@ -17,7 +17,7 @@ class NodeExecuting implements ShouldBroadcast
     public function broadcastWith(): array
     {
         return [
-            'runId'    => $this->runId,
+            'runId' => $this->runId,
             'nodeName' => $this->nodeName,
         ];
     }

@@ -2,6 +2,7 @@
 
 use Cainy\Laragraph\Enums\RunStatus;
 use Cainy\Laragraph\Facades\Laragraph;
+use Cainy\Laragraph\Models\WorkflowRun;
 
 // ─── 1. Linear Chain ─────────────────────────────────────────────────────────
 
@@ -20,13 +21,19 @@ it('conditional-branch routes to approve or reject based on score', function () 
     $approved = $rejected = false;
 
     for ($i = 0; $i < 20; $i++) {
-        $run   = Laragraph::start('conditional-branch');
+        $run = Laragraph::start('conditional-branch');
         $state = $run->fresh()->state;
 
-        if (isset($state['approved'])) $approved = true;
-        if (isset($state['rejected'])) $rejected = true;
+        if (isset($state['approved'])) {
+            $approved = true;
+        }
+        if (isset($state['rejected'])) {
+            $rejected = true;
+        }
 
-        if ($approved && $rejected) break;
+        if ($approved && $rejected) {
+            break;
+        }
     }
 
     expect($approved)->toBeTrue('approve branch never hit')
@@ -62,12 +69,12 @@ it('error-recovery fails on first attempt then succeeds after resume with attemp
     // The FlakyNode throws on attempt < 2, so first run fails.
     try {
         $run = Laragraph::start('error-recovery', ['attempt' => 0]);
-    } catch (\Throwable) {
+    } catch (Throwable) {
         // Sync queue propagates the exception
     }
 
     // Find the run (it was created before the node failed)
-    $run = \Cainy\Laragraph\Models\WorkflowRun::latest()->first();
+    $run = WorkflowRun::latest()->first();
     expect($run->fresh()->status)->toBe(RunStatus::Failed);
     expect($run->fresh()->state)->toHaveKey('error');
 

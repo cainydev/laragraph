@@ -18,8 +18,8 @@ class NodeFailed implements ShouldBroadcast
     public function broadcastWith(): array
     {
         return [
-            'runId'            => $this->runId,
-            'nodeName'         => $this->nodeName,
+            'runId' => $this->runId,
+            'nodeName' => $this->nodeName,
             'exceptionMessage' => $this->exception->getMessage(),
         ];
     }
