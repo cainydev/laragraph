@@ -28,6 +28,15 @@ readonly class Laragraph
     ) {}
 
     /**
+     * Register a workflow by name. The definition can be a class string or
+     * a callable that returns a Workflow/CompiledWorkflow instance.
+     */
+    public function register(string $name, string|callable $definition): void
+    {
+        $this->registry->register($name, $definition);
+    }
+
+    /**
      * Start a new workflow run by name.
      *
      * @throws Throwable

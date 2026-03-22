@@ -3,9 +3,9 @@
   <h1>LaraGraph</h1>
   <p>Stateful, graph-based workflow engine for Laravel.<br>Build multi-step agent pipelines, human-in-the-loop processes, and parallel fan-out/fan-in tasks — all backed by your database and queue.</p>
 
-  [![Latest Version on Packagist](https://img.shields.io/packagist/v/cainy/laragraph.svg?style=flat-square)](https://packagist.org/packages/cainy/laragraph)
-  [![GitHub Tests Action Status](https://img.shields.io/github/actions/workflow/status/cainy/laragraph/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/cainy/laragraph/actions?query=workflow%3Arun-tests+branch%3Amain)
-  [![Total Downloads](https://img.shields.io/packagist/dt/cainy/laragraph.svg?style=flat-square)](https://packagist.org/packages/cainy/laragraph)
+  [![Latest Version on Packagist](https://img.shields.io/packagist/v/cainydev/laragraph.svg?style=flat-square)](https://packagist.org/packages/cainydev/laragraph)
+  [![GitHub Tests Action Status](https://img.shields.io/github/actions/workflow/status/cainydev/laragraph/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/cainydev/laragraph/actions?query=workflow%3Arun-tests+branch%3Amain)
+  [![Total Downloads](https://img.shields.io/packagist/dt/cainydev/laragraph.svg?style=flat-square)](https://packagist.org/packages/cainydev/laragraph)
 
   <sub>Inspired by <a href="https://github.com/langchain-ai/langgraph">LangGraph</a></sub>
 </div>
@@ -236,12 +236,11 @@ Each `Send` dispatches an independent `ExecuteNode` job with an `isolatedPayload
 Register workflows in your `AppServiceProvider` or a dedicated provider:
 
 ```php
-use Cainy\Laragraph\Engine\WorkflowRegistry;
+use Cainy\Laragraph\Facades\Laragraph;
 
 public function boot(): void
 {
-    $this->app->make(WorkflowRegistry::class)
-        ->register('my-pipeline', fn() => MyPipelineWorkflow::build());
+    Laragraph::register('my-pipeline', fn() => MyPipelineWorkflow::build());
 }
 ```
 
