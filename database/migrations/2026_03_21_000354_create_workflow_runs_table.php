@@ -10,6 +10,8 @@ return new class extends Migration {
     {
         Schema::create('workflow_runs', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('parent_run_id')->nullable()->constrained('workflow_runs')->nullOnDelete();
+            $table->string('parent_node_name')->nullable();
             $table->string('key')->nullable();
             $table->json('snapshot')->nullable();
             $table->json('state');

@@ -3,10 +3,8 @@
 namespace Cainy\Laragraph;
 
 use Cainy\Laragraph\Contracts\StateReducerInterface;
-use Cainy\Laragraph\Engine\DefaultStateReducer;
-use Cainy\Laragraph\Engine\PointerTracker;
-use Cainy\Laragraph\Engine\StateManager;
 use Cainy\Laragraph\Engine\WorkflowRegistry;
+use Cainy\Laragraph\Reducers\SmartReducer;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
 
@@ -22,22 +20,15 @@ class LaragraphServiceProvider extends PackageServiceProvider
 
     public function packageRegistered(): void
     {
-        $this->app->bind(StateReducerInterface::class, DefaultStateReducer::class);
+        $this->app->bind(StateReducerInterface::class, SmartReducer::class);
 
         $this->app->singleton(WorkflowRegistry::class, function ($app): WorkflowRegistry {
             return new WorkflowRegistry(config('laragraph.workflows', []));
         });
 
-        $this->app->singleton(PointerTracker::class, PointerTracker::class);
-
-        $this->app->singleton(StateManager::class, function ($app): StateManager {
-            return new StateManager($app->make(StateReducerInterface::class));
-        });
-
         $this->app->singleton(Laragraph::class, function ($app): Laragraph {
             return new Laragraph(
                 $app->make(WorkflowRegistry::class),
-                $app->make(PointerTracker::class),
             );
         });
     }
