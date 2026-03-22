@@ -2,10 +2,13 @@
 
 namespace Cainy\Laragraph\Nodes;
 
+use Cainy\Laragraph\Contracts\Node;
+use Cainy\Laragraph\Engine\NodeExecutionContext;
 use Prism\Prism\Enums\Provider;
 use Prism\Prism\Prism;
+use Prism\Prism\Tool;
 
-abstract class AgentNode extends BaseNode
+abstract class AgentNode implements Node
 {
     protected Provider|string $provider = Provider::Anthropic;
 
@@ -15,7 +18,7 @@ abstract class AgentNode extends BaseNode
 
     protected int $maxTokens = 1024;
 
-    public function __invoke(int $runId, array $state): array
+    public function handle(NodeExecutionContext $context, array $state): array
     {
         $messages = $state['messages'] ?? [];
 
@@ -27,39 +30,30 @@ abstract class AgentNode extends BaseNode
             $request = $request->withSystemPrompt($this->systemPrompt);
         }
 
-        if (! empty($messages)) {
+        if (!empty($messages)) {
             $request = $request->withMessages($messages);
         } else {
             $request = $request->withPrompt($this->getPrompt($state));
         }
 
         $tools = $this->tools();
-        if (! empty($tools)) {
+        if (!empty($tools)) {
             $request = $request->withTools($tools);
         }
 
         $response = $request->asText();
 
-        $assistantMessage = [
-            'role'    => 'assistant',
-            'content' => $response->text,
-        ];
+        $assistantMessage = ['role' => 'assistant', 'content' => $response->text];
 
-        if (! empty($response->toolCalls)) {
-            return [
-                'messages'           => [$assistantMessage],
-                'pending_tool_calls' => array_map(fn ($tc) => [
-                    'id'        => $tc->id,
-                    'name'      => $tc->name,
-                    'arguments' => $tc->arguments(),
-                ], $response->toolCalls),
-            ];
+        if (!empty($response->toolCalls)) {
+            $assistantMessage['tool_calls'] = array_map(fn($tc) => [
+                'id' => $tc->id,
+                'name' => $tc->name,
+                'arguments' => $tc->arguments(),
+            ], $response->toolCalls);
         }
 
-        return [
-            'messages'           => [$assistantMessage],
-            'pending_tool_calls' => [],
-        ];
+        return ['messages' => [$assistantMessage]];
     }
 
     protected function getPrompt(array $state): string
@@ -68,7 +62,7 @@ abstract class AgentNode extends BaseNode
     }
 
     /**
-     * @return array<\Prism\Prism\Tool>
+     * @return array<Tool>
      */
     protected function tools(): array
     {

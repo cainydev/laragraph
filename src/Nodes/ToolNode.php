@@ -2,28 +2,47 @@
 
 namespace Cainy\Laragraph\Nodes;
 
-abstract class ToolNode extends BaseNode
+use Cainy\Laragraph\Contracts\Node;
+use Cainy\Laragraph\Engine\NodeExecutionContext;
+
+abstract class ToolNode implements Node
 {
     /**
      * @return array<string, callable>
      */
     abstract protected function toolMap(): array;
 
-    public function __invoke(int $runId, array $state): array
+    public function handle(NodeExecutionContext $context, array $state): array
     {
-        $pendingCalls = $state['pending_tool_calls'] ?? [];
+        $messages    = $state['messages'] ?? [];
+        $lastMessage = ! empty($messages) ? end($messages) : null;
+
+        if ($lastMessage === null) {
+            return [];
+        }
+
+        $toolCalls = $lastMessage['tool_calls'] ?? [];
+
+        if (empty($toolCalls)) {
+            return [];
+        }
+
         $map = $this->toolMap();
         $results = [];
 
-        foreach ($pendingCalls as $call) {
-            $name = $call['name'] ?? '';
+        foreach ($toolCalls as $call) {
+            $name      = $call['name'] ?? '';
             $arguments = $call['arguments'] ?? [];
-            $id = $call['id'] ?? null;
+            $id        = $call['id'] ?? null;
 
-            if (isset($map[$name])) {
-                $output = ($map[$name])($arguments, $state);
-            } else {
+            if (! isset($map[$name])) {
                 $output = "Tool [{$name}] not found.";
+            } else {
+                try {
+                    $output = ($map[$name])($arguments, $state);
+                } catch (\Throwable $e) {
+                    $output = "Error executing tool '{$name}': {$e->getMessage()}. Please fix the arguments and try again.";
+                }
             }
 
             $results[] = [
@@ -33,9 +52,6 @@ abstract class ToolNode extends BaseNode
             ];
         }
 
-        return [
-            'messages'           => $results,
-            'pending_tool_calls' => [],
-        ];
+        return ['messages' => $results];
     }
 }
