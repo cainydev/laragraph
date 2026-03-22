@@ -22,7 +22,7 @@ abstract class AgentNode implements Node
     {
         $messages = $state['messages'] ?? [];
 
-        $request = Prism::text()
+        $request = app(Prism::class)->text()
             ->using($this->provider, $this->model)
             ->withMaxTokens($this->maxTokens);
 
