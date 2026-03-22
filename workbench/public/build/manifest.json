@@ -1,0 +1,73 @@
+{
+  "_WorkflowCanvas-BZV40eAE.css": {
+    "file": "assets/WorkflowCanvas-BZV40eAE.css",
+    "src": "_WorkflowCanvas-BZV40eAE.css"
+  },
+  "_WorkflowCanvas-C7hIhkgw.js": {
+    "file": "assets/WorkflowCanvas-C7hIhkgw.js",
+    "name": "WorkflowCanvas",
+    "imports": [
+      "resources/js/app.tsx"
+    ],
+    "css": [
+      "assets/WorkflowCanvas-BZV40eAE.css"
+    ]
+  },
+  "resources/css/app.css": {
+    "file": "assets/app-CqQAIkAx.css",
+    "src": "resources/css/app.css",
+    "isEntry": true
+  },
+  "resources/js/Pages/RunDetail.tsx": {
+    "file": "assets/RunDetail-D7g-VBHb.js",
+    "name": "RunDetail",
+    "src": "resources/js/Pages/RunDetail.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/app.tsx",
+      "_WorkflowCanvas-C7hIhkgw.js"
+    ],
+    "css": [
+      "assets/app-CqQAIkAx.css"
+    ]
+  },
+  "resources/js/Pages/WorkflowDetail.tsx": {
+    "file": "assets/WorkflowDetail-CBhnivSc.js",
+    "name": "WorkflowDetail",
+    "src": "resources/js/Pages/WorkflowDetail.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/app.tsx",
+      "_WorkflowCanvas-C7hIhkgw.js"
+    ],
+    "css": [
+      "assets/app-CqQAIkAx.css"
+    ]
+  },
+  "resources/js/Pages/WorkflowIndex.tsx": {
+    "file": "assets/WorkflowIndex-D0usa8bE.js",
+    "name": "WorkflowIndex",
+    "src": "resources/js/Pages/WorkflowIndex.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/app.tsx"
+    ],
+    "css": [
+      "assets/app-CqQAIkAx.css"
+    ]
+  },
+  "resources/js/app.tsx": {
+    "file": "assets/app-DrleKJTH.js",
+    "name": "app",
+    "src": "resources/js/app.tsx",
+    "isEntry": true,
+    "dynamicImports": [
+      "resources/js/Pages/RunDetail.tsx",
+      "resources/js/Pages/WorkflowDetail.tsx",
+      "resources/js/Pages/WorkflowIndex.tsx"
+    ],
+    "css": [
+      "assets/app-CqQAIkAx.css"
+    ]
+  }
+}
