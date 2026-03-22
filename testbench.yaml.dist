@@ -1,0 +1,56 @@
+laravel: '@testbench'
+
+providers:
+  - Cainy\Laragraph\LaragraphServiceProvider
+  - Workbench\App\Providers\WorkbenchServiceProvider
+
+migrations:
+  - database/migrations
+  - workbench/database/migrations
+
+seeders:
+  - Workbench\Database\Seeders\DatabaseSeeder
+
+env:
+  - APP_KEY=base64:MeiSYUDpn0WYNgAghrfeDVZxP+1GCzrdWXsLcFve7+4=
+  - DB_CONNECTION=sqlite
+  - QUEUE_CONNECTION=database
+  - BROADCAST_CONNECTION=reverb
+  - LARAGRAPH_BROADCASTING_ENABLED=true
+  - LARAGRAPH_CHANNEL_TYPE=public
+  - REVERB_APP_ID=laragraph
+  - REVERB_APP_KEY=laragraph-key
+  - REVERB_APP_SECRET=laragraph-secret
+  - REVERB_HOST=localhost
+  - REVERB_PORT=8080
+  - REVERB_SCHEME=http
+  - APP_DEBUG=true
+
+workbench:
+  start: '/'
+  install: true
+  health: false
+  discovers:
+    web: true
+    api: true
+    commands: true
+    components: false
+    factories: true
+    views: true
+  build:
+    - asset-publish
+    - create-sqlite-db
+    - db-wipe
+    - migrate-fresh
+    - migrate
+  assets:
+    - laravel-assets
+    - reverb-config
+  sync:
+    - from: storage
+      to: workbench/storage
+      reverse: true
+    - from: workbench/public/build
+      to: public/build
+    - from: workbench/public/hot
+      to: public/hot

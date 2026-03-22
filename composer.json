@@ -23,6 +23,8 @@
         "symfony/expression-language": "^8.0"
     },
     "require-dev": {
+        "inertiajs/inertia-laravel": "^2.0",
+        "laravel/reverb": "^1.0",
         "larastan/larastan": "^3.0",
         "laravel/pint": "^1.14",
         "nunomaduro/collision": "^8.8",
@@ -46,7 +48,10 @@
             "Workbench\\App\\": "workbench/app/",
             "Workbench\\Database\\Factories\\": "workbench/database/factories/",
             "Workbench\\Database\\Seeders\\": "workbench/database/seeders/"
-        }
+        },
+        "files": [
+            "tests/Helpers.php"
+        ]
     },
     "scripts": {
         "post-autoload-dump": [
@@ -64,7 +69,7 @@
         "serve": [
             "Composer\\Config::disableProcessTimeout",
             "@build",
-            "@php vendor/bin/testbench serve --ansi"
+            "npx --prefix workbench concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"vendor/bin/testbench serve\" \"vendor/bin/testbench queue:listen --tries=3 --timeout=0\" \"vendor/bin/testbench reverb:start\" \"npm run dev --prefix workbench\" --names=server,queue,reverb,vite --kill-others"
         ],
         "lint": [
             "@php vendor/bin/pint --ansi",
