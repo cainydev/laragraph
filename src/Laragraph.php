@@ -4,6 +4,7 @@ namespace Cainy\Laragraph;
 
 use Cainy\Laragraph\Builder\CompiledWorkflow;
 use Cainy\Laragraph\Builder\Workflow;
+use Cainy\Laragraph\Engine\Concerns\ManagesState;
 use Cainy\Laragraph\Engine\Concerns\TracksPointers;
 use Cainy\Laragraph\Engine\ExecuteNode;
 use Cainy\Laragraph\Engine\WorkflowRegistry;
@@ -13,6 +14,7 @@ use Cainy\Laragraph\Events\WorkflowResumed;
 use Cainy\Laragraph\Events\WorkflowStarted;
 use Cainy\Laragraph\Exceptions\InvalidStatusTransition;
 use Cainy\Laragraph\Models\WorkflowRun;
+use JsonException;
 use Cainy\Laragraph\Routing\Send;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -21,7 +23,7 @@ use Throwable;
 
 readonly class Laragraph
 {
-    use TracksPointers;
+    use ManagesState, TracksPointers;
 
     public function __construct(
         private WorkflowRegistry $registry,
@@ -170,17 +172,25 @@ readonly class Laragraph
      */
     public function resumeFromChild(int $parentRunId, string $parentNodeName): void
     {
-        DB::transaction(function () use ($parentRunId): void {
+        $resumed = DB::transaction(function () use ($parentRunId): bool {
             /** @var WorkflowRun $run */
             $run = WorkflowRun::lockForUpdate()->findOrFail($parentRunId);
 
             if ($run->status !== RunStatus::Paused) {
-                return;
+                return false;
             }
 
             $run->status = RunStatus::Running;
             $run->save();
+
+            return true;
         });
+
+        if (! $resumed) {
+            return;
+        }
+
+        Event::dispatch(new WorkflowResumed($parentRunId));
 
         ExecuteNode::dispatch($parentRunId, $parentNodeName);
     }
@@ -254,7 +264,9 @@ readonly class Laragraph
             }
 
             if (! empty($additionalState)) {
-                $run->state = array_merge($run->state, $additionalState);
+                $workflow = $this->hydrateWorkflow($run);
+                $reducer = $workflow->getReducer();
+                $this->applyMutation($run, $additionalState, $reducer);
             }
 
             $run->status = RunStatus::Running;
@@ -272,5 +284,23 @@ readonly class Laragraph
         }
 
         return $run;
+    }
+
+    /**
+     * @throws JsonException
+     */
+    private function hydrateWorkflow(WorkflowRun $run): CompiledWorkflow
+    {
+        if ($run->snapshot !== null) {
+            $json = json_encode($run->snapshot, JSON_THROW_ON_ERROR);
+
+            return Workflow::fromJson($json);
+        }
+
+        if ($run->key !== null) {
+            return $this->registry->resolve($run->key);
+        }
+
+        throw new \RuntimeException("WorkflowRun [{$run->id}] has neither a snapshot nor a registry key.");
     }
 }

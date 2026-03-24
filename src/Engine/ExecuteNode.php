@@ -6,7 +6,6 @@ use Cainy\Laragraph\Builder\CompiledWorkflow;
 use Cainy\Laragraph\Builder\Workflow;
 use Cainy\Laragraph\Contracts\HasRetryPolicy;
 use Cainy\Laragraph\Contracts\HasTags;
-use Cainy\Laragraph\Contracts\HasTimeout;
 use Cainy\Laragraph\Engine\Concerns\EvaluatesExpressions;
 use Cainy\Laragraph\Engine\Concerns\ManagesState;
 use Cainy\Laragraph\Engine\Concerns\TracksPointers;
@@ -18,6 +17,7 @@ use Cainy\Laragraph\Events\WorkflowCompleted;
 use Cainy\Laragraph\Events\WorkflowFailed;
 use Cainy\Laragraph\Exceptions\NodeExecutionException;
 use Cainy\Laragraph\Exceptions\NodePausedException;
+use Cainy\Laragraph\Exceptions\RecursionLimitExceeded;
 use Cainy\Laragraph\Laragraph;
 use Cainy\Laragraph\Models\WorkflowRun;
 use Cainy\Laragraph\Routing\Send;
@@ -85,6 +85,15 @@ class ExecuteNode implements ShouldQueue
             $workflow = $this->hydrateWorkflow($run);
             $reducer = $workflow->getReducer();
 
+            // Check recursion limit
+            $nodeExecutions = ($run->node_executions ?? 0) + 1;
+            if ($nodeExecutions > $workflow->getRecursionLimit()) {
+                $run->status = RunStatus::Failed;
+                $run->save();
+                throw new RecursionLimitExceeded($this->runId, $workflow->getRecursionLimit());
+            }
+            $run->node_executions = $nodeExecutions;
+
             $interruptMarker = $run->state['__interrupt'] ?? null;
             $resumingAfter = $interruptMarker === $this->nodeName
                 && $workflow->shouldInterruptAfter($this->nodeName);
@@ -96,10 +105,7 @@ class ExecuteNode implements ShouldQueue
             } else {
                 $node = $workflow->resolveNode($this->nodeName);
 
-                // Apply per-node contract overrides
-                if ($node instanceof HasTimeout) {
-                    $this->timeout = $node->timeout();
-                }
+                // Apply per-node retry policy if available
                 if ($node instanceof HasRetryPolicy) {
                     $policy = $node->retryPolicy();
                     $this->tries = $policy->maxAttempts;
@@ -130,6 +136,16 @@ class ExecuteNode implements ShouldQueue
                     $run->state = $pauseState;
                     $run->status = RunStatus::Paused;
                     $run->save();
+
+                    // If a child workflow already completed (sync queue), resume immediately.
+                    $childRunKey = "__child_run_{$this->nodeName}";
+                    $childRunId = $e->stateMutation[$childRunKey] ?? null;
+                    if ($childRunId !== null) {
+                        $childRun = WorkflowRun::find($childRunId);
+                        if ($childRun?->status === RunStatus::Completed) {
+                            app(Laragraph::class)->resumeFromChild($this->runId, $this->nodeName);
+                        }
+                    }
 
                     return;
                 } catch (Throwable $e) {
@@ -220,6 +236,44 @@ class ExecuteNode implements ShouldQueue
     {
         $root = $exception->getPrevious() ?? $exception;
 
+        // If the exception is RecursionLimitExceeded, don't retry
+        if ($root instanceof RecursionLimitExceeded) {
+            $this->markFailed($root);
+            Event::dispatch(new NodeFailed($this->runId, $this->nodeName, $root));
+            Event::dispatch(new WorkflowFailed($this->runId, $root));
+
+            return;
+        }
+
+        // Check if the node's retry policy allows retrying this exception
+        if ($this->attempts() < $this->tries) {
+            try {
+                $run = WorkflowRun::find($this->runId);
+                if ($run !== null) {
+                    $workflow = $this->hydrateWorkflow($run);
+                    $node = $workflow->resolveNode($this->nodeName);
+
+                    if ($node instanceof HasRetryPolicy && ! $node->retryPolicy()->shouldRetry($root)) {
+                        $this->markFailed($root);
+                        Event::dispatch(new NodeFailed($this->runId, $this->nodeName, $root));
+                        Event::dispatch(new WorkflowFailed($this->runId, $root));
+
+                        return;
+                    }
+                }
+            } catch (Throwable) {
+                // If we can't check the retry policy, fall through to default behaviour
+            }
+        }
+
+        $this->markFailed($root);
+
+        Event::dispatch(new NodeFailed($this->runId, $this->nodeName, $root));
+        Event::dispatch(new WorkflowFailed($this->runId, $root));
+    }
+
+    private function markFailed(Throwable $root): void
+    {
         DB::transaction(function () use ($root): void {
             /** @var WorkflowRun $run */
             $run = WorkflowRun::lockForUpdate()->findOrFail($this->runId);
@@ -244,9 +298,6 @@ class ExecuteNode implements ShouldQueue
             $run->status = RunStatus::Failed;
             $run->save();
         });
-
-        Event::dispatch(new NodeFailed($this->runId, $this->nodeName, $root));
-        Event::dispatch(new WorkflowFailed($this->runId, $root));
     }
 
     /**
