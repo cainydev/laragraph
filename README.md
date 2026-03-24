@@ -41,10 +41,17 @@
   - [HasTimeout](#hastimeout)
   - [HasRetryPolicy](#hasretrypolicy)
 - [Built-in Node Types](#built-in-node-types)
-  - [AgentNode](#agentnode)
-  - [ToolNode](#toolnode)
   - [FormatNode](#formatnode)
   - [HumanInterruptNode](#humaninterruptnode)
+- [Prism Integration](#prism-integration)
+  - [PrismNode](#prismnode)
+  - [ToolNode](#toolnode)
+  - [Automatic Tool Loops](#automatic-tool-loops)
+  - [Manual Tool Routing](#manual-tool-routing)
+- [Laravel AI Integration](#laravel-ai-integration)
+  - [AsGraphNode Trait](#asgraphnode-trait)
+  - [Structured Output](#structured-output)
+  - [Tool-Using Agents](#tool-using-agents)
 - [Sub-graph Workflows](#sub-graph-workflows)
 - [Events](#events)
 - [Configuration](#configuration)
@@ -516,53 +523,6 @@ The current attempt number is always available in the node via `$context->attemp
 
 ## Built-in Node Types
 
-### AgentNode
-
-Abstract base for Prism-powered LLM nodes. Override `getPrompt()` and optionally `tools()`:
-
-```php
-use Cainy\Laragraph\Nodes\AgentNode;
-use Prism\Prism\Enums\Provider;
-
-class SummarizeAgent extends AgentNode
-{
-    protected Provider|string $provider = Provider::Anthropic;
-    protected string $model = 'claude-sonnet-4-6';
-    protected string $systemPrompt = 'You are a concise summarizer.';
-
-    protected function getPrompt(array $state): string
-    {
-        return 'Summarize: ' . $state['text'];
-    }
-}
-```
-
-`AgentNode::handle()` calls Prism, appends the assistant message to `state['messages']`, and includes any tool calls in the message.
-
-### ToolNode
-
-Abstract base for nodes that execute tool calls from the last message in `state['messages']`. Implement `toolMap()` to return a map of tool names to callables:
-
-```php
-use Cainy\Laragraph\Nodes\ToolNode;
-
-class WeatherToolNode extends ToolNode
-{
-    protected function toolMap(): array
-    {
-        return [
-            'get_weather' => fn(array $args): string =>
-                "Sunny, 22°C in " . ($args['city'] ?? 'unknown'),
-
-            'get_forecast' => fn(array $args): string =>
-                ForecastService::get($args['city'], $args['days'] ?? 3),
-        ];
-    }
-}
-```
-
-Tool results are appended to `state['messages']` as `role: tool` messages, ready for the next `AgentNode` in the cycle.
-
 ### FormatNode
 
 A lightweight inline node for pure state transforms — no class required:
@@ -585,6 +545,259 @@ A convenience node that always pauses the run and fires a `HumanInterventionRequ
 ```php
 Workflow::create()
     ->addNode('check', new HumanInterruptNode())
+```
+
+---
+
+## Prism Integration
+
+LaraGraph ships with first-class support for [Prism](https://github.com/prism-php/prism) via the `Cainy\Laragraph\Integrations\Prism` namespace. Install Prism to use these:
+
+```bash
+composer require prism-php/prism
+```
+
+### PrismNode
+
+A concrete, configurable LLM node. No subclass needed for common use cases:
+
+```php
+use Cainy\Laragraph\Integrations\Prism\PrismNode;
+use Prism\Prism\Enums\Provider;
+use Prism\Prism\Tool;
+
+$workflow = Workflow::create()
+    ->addNode('agent', new PrismNode(
+        provider: Provider::Anthropic,
+        model: 'claude-sonnet-4-20250514',
+        systemPrompt: 'You are a helpful assistant.',
+        maxTokens: 1024,
+        tools: [
+            (new Tool)
+                ->as('get_weather')
+                ->for('Get weather for a city')
+                ->withStringParameter('city', 'City name')
+                ->using(fn (string $city): string => "Sunny, 22°C in {$city}"),
+        ],
+    ))
+    ->transition(Workflow::START, 'agent')
+    ->transition('agent', Workflow::END);
+```
+
+`PrismNode` properly serializes Prism `Message` objects to/from plain arrays for state storage using `MessageSerializer`. It returns the assistant's response (including any tool calls) as a single message in `state['messages']`.
+
+For dynamic behaviour, extend and override `getPrompt()` or `tools()`:
+
+```php
+class ResearchAgent extends PrismNode
+{
+    protected function getPrompt(array $state): string
+    {
+        return 'Research: ' . $state['topic'];
+    }
+
+    public function tools(): array
+    {
+        return [/* dynamic tools based on config */];
+    }
+}
+```
+
+### ToolNode
+
+Abstract base for nodes that manually execute tool calls from `state['messages']`. Implement `toolMap()` to return a map of tool names to callables:
+
+```php
+use Cainy\Laragraph\Integrations\Prism\ToolNode;
+
+class WeatherToolNode extends ToolNode
+{
+    protected function toolMap(): array
+    {
+        return [
+            'get_weather' => fn(array $args): string =>
+                "Sunny, 22°C in " . ($args['city'] ?? 'unknown'),
+        ];
+    }
+}
+```
+
+Tool results are appended to `state['messages']` in Prism's `tool_result` format, ready for the next LLM call.
+
+> **Note:** You typically don't need `ToolNode` when using automatic tool loops (see below). It exists as an escape hatch for custom tool routing.
+
+### Automatic Tool Loops
+
+When a node has tools (detected via a public `tools()` method), the compiler **automatically injects** a tool execution loop at compile time. You don't need to wire up tool routing manually.
+
+```php
+$workflow = Workflow::create()
+    ->addNode('agent', new PrismNode(
+        tools: [$weatherTool, $searchTool],
+    ))
+    ->transition(Workflow::START, 'agent')
+    ->transition('agent', Workflow::END)
+    ->compile();
+
+// The compiled graph looks like:
+// START → agent ──(has_tool_calls)──→ agent.__tools__ → agent
+//                ──(no tool_calls)──→ END
+```
+
+The compiler:
+
+1. **Detects** any node with a public `tools()` method returning non-empty tools
+2. **Injects** a synthetic `{name}.__tools__` node that executes the tool calls
+3. **Guards** existing outgoing edges with `!has_tool_calls` so they only fire when the LLM is done calling tools
+4. **Adds** loop edges: `agent → agent.__tools__` (when tool calls present) and `agent.__tools__ → agent` (unconditional)
+
+This works with `PrismNode`, custom nodes with a `tools()` method, and Laravel AI agents using `AsGraphNode`.
+
+#### Recursion Safety
+
+`PrismNode` resets an iteration counter each time it runs. The `ToolExecutorNode` increments it and enforces `maxIterations` (default 25). When the limit is hit, it returns a text message instead of tool results, breaking the loop naturally.
+
+#### Human-in-the-Loop with Tool Loops
+
+Use `Workflow::toolNode()` to reference the synthetic tools node in interrupt points:
+
+```php
+$workflow = Workflow::create()
+    ->addNode('agent', new PrismNode(tools: [...]))
+    ->transition(Workflow::START, 'agent')
+    ->transition('agent', Workflow::END)
+    ->interruptBefore(Workflow::toolNode('agent')); // pause before tool execution
+```
+
+### Manual Tool Routing
+
+If you need full control over how tools are routed, skip the auto-injection by keeping `tools()` empty on your LLM node and wiring edges explicitly:
+
+```php
+$workflow = Workflow::create()
+    ->addNode('agent', MyCustomAgentNode::class)
+    ->addNode('tools', WeatherToolNode::class)
+    ->transition(Workflow::START, 'agent')
+    ->transition('agent', 'tools', 'has_tool_calls(state["messages"])')
+    ->transition('agent', Workflow::END, '!has_tool_calls(state["messages"])')
+    ->transition('tools', 'agent');
+```
+
+---
+
+## Laravel AI Integration
+
+LaraGraph integrates with [Laravel AI](https://github.com/laravel/ai) via the `AsGraphNode` trait. Any Laravel AI agent can be dropped into a workflow graph without adapter classes.
+
+```bash
+composer require laravel/ai
+```
+
+### AsGraphNode Trait
+
+Add the `AsGraphNode` trait to a standard Laravel AI agent to make it a Laragraph node. The agent keeps its native `Agent` contract and `Promptable` trait — `AsGraphNode` bridges the two systems:
+
+```php
+use Cainy\Laragraph\Contracts\Node;
+use Cainy\Laragraph\Integrations\LaravelAi\AsGraphNode;
+use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Promptable;
+use Stringable;
+
+class ResearchAgent implements Agent, Node
+{
+    use AsGraphNode, Promptable;
+
+    public function instructions(): Stringable|string
+    {
+        return 'You are a research assistant. Analyze the given topic thoroughly.';
+    }
+
+    protected function getAgentPrompt(): string
+    {
+        // $this->state is hydrated from the workflow before prompt() is called
+        return 'Research: ' . ($this->state['topic'] ?? 'general');
+    }
+}
+```
+
+The trait:
+
+1. Hydrates `$this->state` and `$this->ctx` before execution so your agent methods (`instructions()`, `messages()`, `tools()`) can read the current graph state
+2. Calls Laravel AI's native `prompt()` method
+3. Converts the response into a state mutation automatically — text responses are appended to `state['messages']`
+
+Register it like any other node:
+
+```php
+Workflow::create()
+    ->addNode('researcher', ResearchAgent::class)
+    ->transition(Workflow::START, 'researcher')
+    ->transition('researcher', Workflow::END);
+```
+
+### Structured Output
+
+If your agent implements `HasStructuredOutput`, the trait automatically maps the structured response keys to state mutation keys:
+
+```php
+use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\HasStructuredOutput;
+
+class ClassifierAgent implements Agent, Node, HasStructuredOutput
+{
+    use AsGraphNode, Promptable;
+
+    public function instructions(): string
+    {
+        return 'Classify the input text into a category and confidence score.';
+    }
+
+    public function schema(JsonSchema $schema): array
+    {
+        return [
+            'category' => $schema->string()->required(),
+            'confidence' => $schema->number()->min(0)->max(1)->required(),
+        ];
+    }
+}
+```
+
+After prompting, `$response['category']` and `$response['confidence']` are merged directly into graph state. Override `mutateStateWithStructuredOutput()` if you need to remap keys.
+
+### Tool-Using Agents
+
+Laravel AI agents that implement `HasTools` are automatically detected by the compiler. The tool loop injection works exactly as it does with `PrismNode` — no manual wiring needed:
+
+```php
+use App\Ai\Tools\GetWeather;
+use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\HasTools;
+
+class WeatherAgent implements Agent, Node, HasTools
+{
+    use AsGraphNode, Promptable;
+
+    public function instructions(): string
+    {
+        return 'You are a weather assistant.';
+    }
+
+    public function tools(): array
+    {
+        return [
+            new GetWeather,
+        ];
+    }
+}
+
+// compile() auto-injects: weather → weather.__tools__ → weather loop
+Workflow::create()
+    ->addNode('weather', WeatherAgent::class)
+    ->transition(Workflow::START, 'weather')
+    ->transition('weather', Workflow::END)
+    ->compile();
 ```
 
 ---
