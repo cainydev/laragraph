@@ -67,3 +67,10 @@ it('serializes Closure branch with declared targets for visualization', function
     expect($data['targets'])->toBe(['b', 'c']);
     expect($data)->not->toHaveKey('resolver');
 });
+
+it('throws when restoring Closure branch from snapshot', function () {
+    $edge = new BranchEdge('a', fn () => 'b', ['b', 'c']);
+    $data = $edge->toArray(); // resolver is absent
+
+    expect(fn () => BranchEdge::fromArray($data))->toThrow(InvalidArgumentException::class);
+});

@@ -1,30 +1,33 @@
 <?php
 
-use Cainy\Laragraph\Events\HumanInterventionRequired;
 use Cainy\Laragraph\Exceptions\NodePausedException;
-use Cainy\Laragraph\Nodes\HumanInterruptNode;
-use Illuminate\Support\Facades\Event;
+use Cainy\Laragraph\Nodes\GateNode;
 
 use function Cainy\Laragraph\Tests\makeContext;
 
 it('throws NodePausedException', function () {
-    $node = new HumanInterruptNode;
+    $node = new GateNode;
 
     expect(fn () => $node->handle(makeContext(), []))->toThrow(NodePausedException::class);
 });
 
-it('dispatches HumanInterventionRequired event before throwing', function () {
-    Event::fake();
-
-    $node = new HumanInterruptNode;
+it('stores the reason in state mutation', function () {
+    $node = new GateNode('Manager approval needed');
 
     try {
-        $node->handle(makeContext(runId: 42), []);
-    } catch (NodePausedException) {
-        // expected
+        $node->handle(makeContext(), []);
+    } catch (NodePausedException $e) {
+        expect($e->stateMutation['gate_reason'])->toBe('Manager approval needed');
     }
+});
 
-    Event::assertDispatched(HumanInterventionRequired::class, function ($event) {
-        return $event->runId === 42;
-    });
+it('serializes and deserializes correctly', function () {
+    $node = new GateNode('Review required');
+    $array = $node->toArray();
+
+    expect($array['__synthetic'])->toBe('gate');
+    expect($array['reason'])->toBe('Review required');
+
+    $restored = GateNode::fromArray($array);
+    expect($restored->reason)->toBe('Review required');
 });

@@ -2,7 +2,7 @@
 
 use Cainy\Laragraph\Contracts\Node;
 use Cainy\Laragraph\Engine\NodeExecutionContext;
-use Cainy\Laragraph\Nodes\ToolExecutorNode;
+use Cainy\Laragraph\Integrations\Prism\ToolExecutor;
 use Prism\Prism\Tool;
 
 use function Cainy\Laragraph\Tests\makeContext;
@@ -11,8 +11,6 @@ use function Cainy\Laragraph\Tests\makeContext;
 beforeEach(function () {
     $this->parentClass = new class implements Node
     {
-        public int $maxIterations = 3;
-
         public function handle(NodeExecutionContext $context, array $state): array
         {
             return [];
@@ -36,7 +34,7 @@ beforeEach(function () {
 });
 
 it('executes Prism Tool objects correctly', function () {
-    $node = new ToolExecutorNode('agent', $this->parentClass::class);
+    $node = new ToolExecutor('agent', $this->parentClass::class);
 
     $state = [
         'messages' => [
@@ -44,10 +42,9 @@ it('executes Prism Tool objects correctly', function () {
                 ['id' => 'tc1', 'name' => 'add', 'arguments' => ['a' => 2, 'b' => 3]],
             ]],
         ],
-        '__agent_iterations' => 0,
     ];
 
-    $mutation = $node->handle(makeContext(nodeName: 'agent.__tools__'), $state);
+    $mutation = $node->handle(makeContext(nodeName: 'agent.__loop__'), $state);
 
     expect($mutation['messages'])->toHaveCount(1);
     expect($mutation['messages'][0]['type'])->toBe('tool_result');
@@ -58,7 +55,7 @@ it('executes Prism Tool objects correctly', function () {
 });
 
 it('returns error for unknown tool', function () {
-    $node = new ToolExecutorNode('agent', $this->parentClass::class);
+    $node = new ToolExecutor('agent', $this->parentClass::class);
 
     $state = [
         'messages' => [
@@ -68,50 +65,13 @@ it('returns error for unknown tool', function () {
         ],
     ];
 
-    $mutation = $node->handle(makeContext(nodeName: 'agent.__tools__'), $state);
+    $mutation = $node->handle(makeContext(nodeName: 'agent.__loop__'), $state);
 
     expect($mutation['messages'][0]['tool_results'][0]['result'])->toContain('not found');
 });
 
-it('increments iteration counter', function () {
-    $node = new ToolExecutorNode('agent', $this->parentClass::class);
-
-    $state = [
-        'messages' => [
-            ['type' => 'assistant', 'content' => '', 'tool_calls' => [
-                ['id' => 'tc1', 'name' => 'greet', 'arguments' => ['name' => 'World']],
-            ]],
-        ],
-        '__agent_iterations' => 1,
-    ];
-
-    $mutation = $node->handle(makeContext(nodeName: 'agent.__tools__'), $state);
-
-    expect($mutation['__agent_iterations'])->toBe(2);
-});
-
-it('enforces max iterations', function () {
-    $node = new ToolExecutorNode('agent', $this->parentClass::class);
-
-    $state = [
-        'messages' => [
-            ['type' => 'assistant', 'content' => '', 'tool_calls' => [
-                ['id' => 'tc1', 'name' => 'add', 'arguments' => ['a' => 1, 'b' => 1]],
-            ]],
-        ],
-        '__agent_iterations' => 3, // equals maxIterations
-    ];
-
-    $mutation = $node->handle(makeContext(nodeName: 'agent.__tools__'), $state);
-
-    // Should return an assistant message breaking the loop (no tool_calls)
-    expect($mutation['messages'][0]['type'])->toBe('assistant');
-    expect($mutation['messages'][0]['content'])->toContain('Maximum tool iterations');
-    expect($mutation['messages'][0]['tool_calls'])->toBeEmpty();
-});
-
 it('serializes and deserializes correctly', function () {
-    $node = new ToolExecutorNode('agent', $this->parentClass::class);
+    $node = new ToolExecutor('agent', $this->parentClass::class);
 
     $array = $node->toArray();
 
@@ -119,7 +79,7 @@ it('serializes and deserializes correctly', function () {
     expect($array['parent_node_name'])->toBe('agent');
     expect($array['parent_node_class'])->toBe($this->parentClass::class);
 
-    $restored = ToolExecutorNode::fromArray($array);
+    $restored = ToolExecutor::fromArray($array);
 
     expect($restored->getParentNodeName())->toBe('agent');
     expect($restored->getParentNodeClass())->toBe($this->parentClass::class);
@@ -127,7 +87,7 @@ it('serializes and deserializes correctly', function () {
 });
 
 it('returns empty when no tool_calls in last message', function () {
-    $node = new ToolExecutorNode('agent', $this->parentClass::class);
+    $node = new ToolExecutor('agent', $this->parentClass::class);
 
     $state = [
         'messages' => [
@@ -135,17 +95,17 @@ it('returns empty when no tool_calls in last message', function () {
         ],
     ];
 
-    expect($node->handle(makeContext(nodeName: 'agent.__tools__'), $state))->toBe([]);
+    expect($node->handle(makeContext(nodeName: 'agent.__loop__'), $state))->toBe([]);
 });
 
 it('returns empty when no messages in state', function () {
-    $node = new ToolExecutorNode('agent', $this->parentClass::class);
+    $node = new ToolExecutor('agent', $this->parentClass::class);
 
-    expect($node->handle(makeContext(nodeName: 'agent.__tools__'), []))->toBe([]);
+    expect($node->handle(makeContext(nodeName: 'agent.__loop__'), []))->toBe([]);
 });
 
 it('executes multiple tool calls in one message', function () {
-    $node = new ToolExecutorNode('agent', $this->parentClass::class);
+    $node = new ToolExecutor('agent', $this->parentClass::class);
 
     $state = [
         'messages' => [
@@ -156,7 +116,7 @@ it('executes multiple tool calls in one message', function () {
         ],
     ];
 
-    $mutation = $node->handle(makeContext(nodeName: 'agent.__tools__'), $state);
+    $mutation = $node->handle(makeContext(nodeName: 'agent.__loop__'), $state);
 
     expect($mutation['messages'][0]['tool_results'])->toHaveCount(2);
     expect($mutation['messages'][0]['tool_results'][0]['result'])->toBe('3');
