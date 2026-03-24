@@ -1,14 +1,14 @@
 <?php
 
-namespace Cainy\Laragraph\Nodes;
+namespace Cainy\Laragraph\Integrations\Prism;
 
 use Cainy\Laragraph\Contracts\HasName;
-use Cainy\Laragraph\Contracts\Node;
+use Cainy\Laragraph\Contracts\SerializableNode;
 use Cainy\Laragraph\Engine\NodeExecutionContext;
 use Prism\Prism\Tool;
 use Prism\Prism\ValueObjects\ToolError;
 
-class ToolExecutorNode implements HasName, Node
+final class ToolExecutor implements HasName, SerializableNode
 {
     public function __construct(
         private readonly string $parentNodeName,
@@ -22,30 +22,14 @@ class ToolExecutorNode implements HasName, Node
 
     public function handle(NodeExecutionContext $context, array $state): array
     {
-        $parent = $this->resolveParent();
+        $parent = app($this->parentNodeClass);
         $tools = $parent->tools();
-        $maxIterations = $this->resolveMaxIterations($parent);
 
         $messages = $state['messages'] ?? [];
         $lastMessage = ! empty($messages) ? end($messages) : null;
 
         if ($lastMessage === null || empty($lastMessage['tool_calls'])) {
             return [];
-        }
-
-        // Check iteration counter
-        $counterKey = "__{$this->parentNodeName}_iterations";
-        $count = (int) ($state[$counterKey] ?? 0);
-
-        if ($count >= $maxIterations) {
-            return [
-                'messages' => [[
-                    'type' => 'assistant',
-                    'content' => "Maximum tool iterations ({$maxIterations}) reached.",
-                    'tool_calls' => [],
-                    'additional_content' => [],
-                ]],
-            ];
         }
 
         $toolMap = [];
@@ -92,26 +76,7 @@ class ToolExecutorNode implements HasName, Node
                 'type' => 'tool_result',
                 'tool_results' => $toolResults,
             ]],
-            $counterKey => $count + 1,
         ];
-    }
-
-    private function resolveParent(): object
-    {
-        return app($this->parentNodeClass);
-    }
-
-    private function resolveMaxIterations(object $parent): int
-    {
-        if (property_exists($parent, 'maxIterations')) {
-            return (int) $parent->maxIterations;
-        }
-
-        if (method_exists($parent, 'maxIterations')) {
-            return (int) $parent->maxIterations();
-        }
-
-        return 25;
     }
 
     /**
@@ -129,7 +94,7 @@ class ToolExecutorNode implements HasName, Node
     /**
      * @param  array{parent_node_name: string, parent_node_class: string}  $data
      */
-    public static function fromArray(array $data): self
+    public static function fromArray(array $data): static
     {
         return new self(
             parentNodeName: $data['parent_node_name'],

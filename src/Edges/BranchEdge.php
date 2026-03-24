@@ -64,11 +64,16 @@ class BranchEdge
 
     public static function fromArray(array $data): self
     {
-        // Closure-based edges are never reconstructed from JSON (snapshot workflows use string resolvers).
-        // If 'resolver' is absent this is a visualization-only branch edge.
+        if (! isset($data['resolver']) || $data['resolver'] === '') {
+            throw new \InvalidArgumentException(
+                "Cannot restore BranchEdge [{$data['from']}] from snapshot: 'resolver' is missing. ".
+                'Closure-based branch edges cannot be serialized or restored. Use a string expression resolver instead.'
+            );
+        }
+
         return new self(
             $data['from'],
-            $data['resolver'] ?? '',
+            $data['resolver'],
             $data['targets'] ?? [],
         );
     }

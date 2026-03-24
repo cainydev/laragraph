@@ -3,7 +3,6 @@
 namespace Cainy\Laragraph\Engine\Concerns;
 
 use Cainy\Laragraph\Contracts\StateReducerInterface;
-use Cainy\Laragraph\Enums\RunStatus;
 use Cainy\Laragraph\Models\WorkflowRun;
 
 trait ManagesState
@@ -16,12 +15,4 @@ trait ManagesState
         return $newState;
     }
 
-    protected function updateStatus(WorkflowRun $run, RunStatus $status, ?string $currentNode = null): void
-    {
-        $run->status = $status;
-
-        if ($currentNode !== null) {
-            $run->current = $currentNode;
-        }
-    }
 }

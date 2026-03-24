@@ -25,6 +25,7 @@ use Throwable;
  * @property RunStatus $status
  * @property string $current
  * @property array $active_pointers
+ * @property int $node_executions
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property Carbon|null $deleted_at
@@ -42,6 +43,7 @@ class WorkflowRun extends Model
         'status',
         'current',
         'active_pointers',
+        'node_executions',
     ];
 
     protected $attributes = [
@@ -99,7 +101,9 @@ class WorkflowRun extends Model
     {
         $days = config('laragraph.prunable_after_days', 30);
 
-        return static::query()->where('created_at', '<', now()->subDays($days));
+        return static::query()
+            ->whereIn('status', [RunStatus::Completed->value, RunStatus::Failed->value])
+            ->where('created_at', '<', now()->subDays($days));
     }
 
     protected function casts(): array

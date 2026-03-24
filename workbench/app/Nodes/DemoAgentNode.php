@@ -2,14 +2,14 @@
 
 namespace Workbench\App\Nodes;
 
+use Cainy\Laragraph\Contracts\HasLoop;
 use Cainy\Laragraph\Contracts\Node;
 use Cainy\Laragraph\Engine\NodeExecutionContext;
+use Cainy\Laragraph\Integrations\Prism\ToolExecutor;
 use Prism\Prism\Tool;
 
-class DemoAgentNode implements Node
+class DemoAgentNode implements Node, HasLoop
 {
-    public int $maxIterations = 25;
-
     public function handle(NodeExecutionContext $context, array $state): array
     {
         usleep(500_000); // Simulate LLM latency
@@ -28,7 +28,6 @@ class DemoAgentNode implements Node
                         'additional_content' => [],
                     ],
                 ],
-                "__{$context->nodeName}_iterations" => 0,
             ];
         }
 
@@ -44,8 +43,17 @@ class DemoAgentNode implements Node
                     'additional_content' => [],
                 ],
             ],
-            "__{$context->nodeName}_iterations" => 0,
         ];
+    }
+
+    public function loopNode(string $nodeName): Node
+    {
+        return new ToolExecutor($nodeName, static::class);
+    }
+
+    public function loopCondition(): string|\Closure
+    {
+        return 'not_empty(last(state["messages"])["tool_calls"] ?? [])';
     }
 
     /**

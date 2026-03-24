@@ -2,6 +2,7 @@
 
 namespace Cainy\Laragraph\Integrations\Prism;
 
+use Cainy\Laragraph\Contracts\HasLoop;
 use Cainy\Laragraph\Contracts\Node;
 use Cainy\Laragraph\Engine\NodeExecutionContext;
 use Prism\Prism\Enums\Provider;
@@ -9,7 +10,7 @@ use Prism\Prism\Prism;
 use Prism\Prism\Tool;
 use Prism\Prism\ValueObjects\Messages\AssistantMessage;
 
-class PrismNode implements Node
+class PrismNode implements Node, HasLoop
 {
     /**
      * @param  array<Tool>  $tools
@@ -20,7 +21,6 @@ class PrismNode implements Node
         protected string $systemPrompt = '',
         protected int $maxTokens = 1024,
         protected array $tools = [],
-        public int $maxIterations = 25,
     ) {}
 
     public function handle(NodeExecutionContext $context, array $state): array
@@ -59,7 +59,6 @@ class PrismNode implements Node
 
         return [
             'messages' => [$assistantMessage],
-            "__{$context->nodeName}_iterations" => 0,
         ];
     }
 
@@ -74,5 +73,22 @@ class PrismNode implements Node
     public function tools(): array
     {
         return $this->tools;
+    }
+
+    // -------------------------------------------------------------------------
+    // HasLoop implementation
+    // -------------------------------------------------------------------------
+
+    public function loopNode(string $nodeName): Node
+    {
+        return new ToolExecutor(
+            parentNodeName: $nodeName,
+            parentNodeClass: static::class,
+        );
+    }
+
+    public function loopCondition(): string|\Closure
+    {
+        return 'not_empty(last(state["messages"])["tool_calls"] ?? [])';
     }
 }
