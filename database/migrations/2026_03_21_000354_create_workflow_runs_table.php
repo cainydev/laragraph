@@ -18,6 +18,7 @@ return new class extends Migration
             $table->string('status');
             $table->string('current');
             $table->json('active_pointers')->nullable();
+            $table->unsignedInteger('node_executions')->default(0);
             $table->timestamps();
             $table->softDeletes();
         });

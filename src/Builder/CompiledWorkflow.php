@@ -4,6 +4,7 @@ namespace Cainy\Laragraph\Builder;
 
 use Cainy\Laragraph\Contracts\HasName;
 use Cainy\Laragraph\Contracts\Node;
+use Cainy\Laragraph\Contracts\SerializableNode;
 use Cainy\Laragraph\Contracts\StateReducerInterface;
 use Cainy\Laragraph\Edges\BranchEdge;
 use Cainy\Laragraph\Edges\Edge;
@@ -11,7 +12,6 @@ use Cainy\Laragraph\Engine\NodeExecutionContext;
 use Cainy\Laragraph\Exceptions\NodePausedException;
 use Cainy\Laragraph\Laragraph;
 use Cainy\Laragraph\Models\WorkflowRun;
-use Cainy\Laragraph\Nodes\ToolExecutorNode;
 use Cainy\Laragraph\Routing\Send;
 
 class CompiledWorkflow implements HasName, Node
@@ -32,6 +32,7 @@ class CompiledWorkflow implements HasName, Node
         private readonly array $interruptBefore = [],
         private readonly array $interruptAfter = [],
         private readonly ?string $workflowName = null,
+        private readonly ?int $recursionLimit = null,
     ) {
         foreach ($edges as $edge) {
             $this->edgeIndex[$edge->from][] = $edge;
@@ -75,10 +76,38 @@ class CompiledWorkflow implements HasName, Node
 
         // Resuming after child completed — diff child's final state against what we sent in.
         $childRun = WorkflowRun::findOrFail($childRunId);
-        $delta = array_diff_assoc($childRun->state, $state);
+        $delta = $this->recursiveDiff($childRun->state, $state);
         $delta[$childRunKey] = null; // Remove the child reference marker
 
         return $delta;
+    }
+
+    /**
+     * Recursively compute the difference between two arrays.
+     * Returns keys present in $new that differ from $old (by value comparison).
+     *
+     * @param  array<string, mixed>  $new
+     * @param  array<string, mixed>  $old
+     * @return array<string, mixed>
+     */
+    private function recursiveDiff(array $new, array $old): array
+    {
+        $diff = [];
+
+        foreach ($new as $key => $value) {
+            if (! array_key_exists($key, $old)) {
+                $diff[$key] = $value;
+            } elseif (is_array($value) && is_array($old[$key])) {
+                $nested = $this->recursiveDiff($value, $old[$key]);
+                if (! empty($nested)) {
+                    $diff[$key] = $value;
+                }
+            } elseif ($value !== $old[$key]) {
+                $diff[$key] = $value;
+            }
+        }
+
+        return $diff;
     }
 
     // -------------------------------------------------------------------------
@@ -93,7 +122,7 @@ class CompiledWorkflow implements HasName, Node
     {
         $serializedNodes = array_map(
             function ($node) {
-                if ($node instanceof ToolExecutorNode) {
+                if ($node instanceof SerializableNode) {
                     return $node->toArray();
                 }
 
@@ -108,6 +137,8 @@ class CompiledWorkflow implements HasName, Node
             'nodes' => $serializedNodes,
             'edges' => $serializedEdges,
             'reducerClass' => $this->reducerClass,
+            'workflowName' => $this->workflowName,
+            'recursionLimit' => $this->recursionLimit,
             'interruptBefore' => $this->interruptBefore,
             'interruptAfter' => $this->interruptAfter,
         ];
@@ -165,6 +196,11 @@ class CompiledWorkflow implements HasName, Node
         }
 
         return app(StateReducerInterface::class);
+    }
+
+    public function getRecursionLimit(): int
+    {
+        return $this->recursionLimit ?? (int) config('laragraph.recursion_limit', 25);
     }
 
     public function shouldInterruptBefore(string $nodeName): bool

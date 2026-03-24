@@ -2,14 +2,25 @@
 
 namespace Cainy\Laragraph\Builder;
 
+use Cainy\Laragraph\Contracts\HasLoop;
 use Cainy\Laragraph\Contracts\Node;
+use Cainy\Laragraph\Contracts\SerializableNode;
 use Cainy\Laragraph\Edges\BranchEdge;
 use Cainy\Laragraph\Edges\Edge;
-use Cainy\Laragraph\Nodes\ToolExecutorNode;
+use Cainy\Laragraph\Engine\Concerns\EvaluatesExpressions;
+use Cainy\Laragraph\Nodes\GateNode;
+use Cainy\Laragraph\Nodes\MapNode;
+use Cainy\Laragraph\Nodes\ReduceNode;
+use Cainy\Laragraph\Nodes\HttpNode;
+use Cainy\Laragraph\Nodes\DelayNode;
+use Cainy\Laragraph\Nodes\CacheNode;
+use Cainy\Laragraph\Nodes\NotifyNode;
+use Cainy\Laragraph\Integrations\Prism\ToolExecutor;
 use JsonException;
 
 class Workflow
 {
+    use EvaluatesExpressions;
     public const string START = '__START__';
 
     public const string END = '__END__';
@@ -24,11 +35,29 @@ class Workflow
 
     private ?string $workflowName = null;
 
+    private ?int $recursionLimit = null;
+
     /** @var string[] */
     private array $interruptBefore = [];
 
     /** @var string[] */
     private array $interruptAfter = [];
+
+    /**
+     * Registry mapping __synthetic type names to node classes.
+     *
+     * @var array<string, class-string<SerializableNode>>
+     */
+    private static array $syntheticTypes = [
+        'tool_executor' => ToolExecutor::class,
+        'gate' => GateNode::class,
+        'map' => MapNode::class,
+        'reduce' => ReduceNode::class,
+        'http' => HttpNode::class,
+        'delay' => DelayNode::class,
+        'cache' => CacheNode::class,
+        'notify' => NotifyNode::class,
+    ];
 
     public static function create(): self
     {
@@ -37,7 +66,17 @@ class Workflow
 
     public static function toolNode(string $nodeName): string
     {
-        return $nodeName.'.__tools__';
+        return $nodeName . '.__loop__';
+    }
+
+    /**
+     * Register a custom synthetic node type for JSON serialization/deserialization.
+     *
+     * @param  class-string<SerializableNode>  $nodeClass
+     */
+    public static function registerSyntheticType(string $typeName, string $nodeClass): void
+    {
+        self::$syntheticTypes[$typeName] = $nodeClass;
     }
 
     /**
@@ -57,8 +96,11 @@ class Workflow
 
         $nodes = [];
         foreach ($data['nodes'] ?? [] as $name => $nodeData) {
-            if (is_array($nodeData) && ($nodeData['__synthetic'] ?? null) === 'tool_executor') {
-                $nodes[$name] = ToolExecutorNode::fromArray($nodeData);
+            if (is_array($nodeData) && isset($nodeData['__synthetic'])) {
+                $typeName = $nodeData['__synthetic'];
+                $nodeClass = self::$syntheticTypes[$typeName]
+                    ?? throw new \InvalidArgumentException("Unknown synthetic node type [{$typeName}].");
+                $nodes[$name] = $nodeClass::fromArray($nodeData);
             } else {
                 $nodes[$name] = $nodeData;
             }
@@ -71,6 +113,7 @@ class Workflow
             interruptBefore: $data['interruptBefore'] ?? [],
             interruptAfter: $data['interruptAfter'] ?? [],
             workflowName: $data['workflowName'] ?? null,
+            recursionLimit: $data['recursionLimit'] ?? null,
         );
     }
 
@@ -113,6 +156,17 @@ class Workflow
     }
 
     /**
+     * Set the maximum number of node executions before the workflow is marked as failed.
+     * Defaults to config('laragraph.recursion_limit', 25).
+     */
+    public function withRecursionLimit(int $limit): self
+    {
+        $this->recursionLimit = $limit;
+
+        return $this;
+    }
+
+    /**
      * Pause execution BEFORE the given node(s) run. On resume the node executes.
      */
     public function interruptBefore(string ...$nodeNames): self
@@ -139,7 +193,7 @@ class Workflow
         $nodes = $this->nodes;
         $edges = $this->edges;
 
-        $this->injectToolLoops($nodes, $edges);
+        $this->injectLoops($nodes, $edges);
 
         return new CompiledWorkflow(
             nodes: $nodes,
@@ -148,6 +202,7 @@ class Workflow
             interruptBefore: $this->interruptBefore,
             interruptAfter: $this->interruptAfter,
             workflowName: $this->workflowName,
+            recursionLimit: $this->recursionLimit,
         );
     }
 
@@ -155,64 +210,70 @@ class Workflow
      * @param  array<string, string|Node>  $nodes
      * @param  list<Edge|BranchEdge>  $edges
      */
-    private function injectToolLoops(array &$nodes, array &$edges): void
+    private function injectLoops(array &$nodes, array &$edges): void
     {
-        $toolUsingNodes = [];
-
         foreach ($nodes as $name => $node) {
-            if ($this->nodeHasTools($node)) {
-                $toolUsingNodes[$name] = $node;
+            if (! ($node instanceof HasLoop)) {
+                continue;
             }
-        }
 
-        foreach ($toolUsingNodes as $name => $node) {
-            $toolNodeName = self::toolNode($name);
-            $nodeClass = is_string($node) ? $node : $node::class;
+            $loopNodeName = $name . '.__loop__';
+            $nodes[$loopNodeName] = $node->loopNode($name);
+            $condition = $node->loopCondition();
 
-            // Add the synthetic tool executor node
-            $nodes[$toolNodeName] = new ToolExecutorNode($name, $nodeClass);
-
-            // Guard existing edges FROM this node with !has_tool_calls
-            $edges = array_map(function (Edge|BranchEdge $edge) use ($name): Edge|BranchEdge {
+            // Guard existing edges FROM this node with the negated loop condition
+            $edges = array_map(function (Edge|BranchEdge $edge) use ($name, $condition): Edge|BranchEdge {
                 if ($edge->from !== $name) {
                     return $edge;
                 }
 
                 if ($edge instanceof BranchEdge) {
-                    return $this->guardBranchEdge($edge);
+                    return $this->guardBranchEdge($edge, $condition);
                 }
 
-                return $this->guardEdge($edge);
+                return $this->guardEdge($edge, $condition);
             }, $edges);
 
-            // Add tool loop edges
-            $edges[] = new Edge($name, $toolNodeName, 'has_tool_calls(state["messages"])');
-            $edges[] = new Edge($toolNodeName, $name);
+            // Loop entry edge: fire when condition is true
+            $edges[] = new Edge($name, $loopNodeName, $condition);
+            // Loop back edge: always return to parent node after loop node runs
+            $edges[] = new Edge($loopNodeName, $name);
         }
     }
 
-    private function nodeHasTools(string|Node $node): bool
+    private function guardEdge(Edge $edge, string|\Closure $condition): Edge
     {
-        if ($node instanceof Node) {
-            return method_exists($node, 'tools') && ! empty($node->tools());
+        if ($condition instanceof \Closure) {
+            $original = $edge->when;
+
+            return new Edge($edge->from, $edge->to, function (array $state) use ($condition, $original): bool {
+                if ($condition($state)) {
+                    return false;
+                }
+
+                if ($original === null) {
+                    return true;
+                }
+
+                if ($original instanceof \Closure) {
+                    return (bool) $original($state);
+                }
+
+                return true;
+            });
         }
 
-        // Class-string: trust that the method exists, can't call it without instantiation
-        return is_a($node, Node::class, true) && method_exists($node, 'tools');
-    }
-
-    private function guardEdge(Edge $edge): Edge
-    {
+        // String expression condition
         if ($edge->when === null) {
-            return new Edge($edge->from, $edge->to, '!has_tool_calls(state["messages"])');
+            return new Edge($edge->from, $edge->to, $this->negateExpression($condition));
         }
 
         if ($edge->when instanceof \Closure) {
             $original = $edge->when;
+            $el = $this->makeExpressionLanguage();
 
-            return new Edge($edge->from, $edge->to, function (array $state) use ($original): bool {
-                $last = ! empty($state['messages']) ? end($state['messages']) : null;
-                if (! empty($last['tool_calls'])) {
+            return new Edge($edge->from, $edge->to, function (array $state) use ($condition, $original, $el): bool {
+                if ($el->evaluate($condition, ['state' => $state])) {
                     return false;
                 }
 
@@ -220,17 +281,33 @@ class Workflow
             });
         }
 
-        return new Edge($edge->from, $edge->to, '!has_tool_calls(state["messages"]) and ('.$edge->when.')');
+        return new Edge($edge->from, $edge->to, $this->negateExpression($condition) . ' and (' . $edge->when . ')');
     }
 
-    private function guardBranchEdge(BranchEdge $edge): BranchEdge
+    private function guardBranchEdge(BranchEdge $edge, string|\Closure $condition): BranchEdge
     {
-        if ($edge->resolver instanceof \Closure) {
+        if ($condition instanceof \Closure) {
             $original = $edge->resolver;
 
-            return new BranchEdge($edge->from, function (array $state) use ($original): array {
-                $last = ! empty($state['messages']) ? end($state['messages']) : null;
-                if (! empty($last['tool_calls'])) {
+            return new BranchEdge($edge->from, function (array $state) use ($condition, $original): array {
+                if ($condition($state)) {
+                    return [];
+                }
+
+                $result = ($original instanceof \Closure)
+                    ? $original($state)
+                    : $original;
+
+                return is_array($result) ? $result : [(string) $result];
+            }, $edge->targets);
+        }
+
+        if ($edge->resolver instanceof \Closure) {
+            $original = $edge->resolver;
+            $el = $this->makeExpressionLanguage();
+
+            return new BranchEdge($edge->from, function (array $state) use ($condition, $original, $el): array {
+                if ($el->evaluate($condition, ['state' => $state])) {
                     return [];
                 }
 
@@ -240,10 +317,24 @@ class Workflow
             }, $edge->targets);
         }
 
-        // String expression: wrap with guard
-        $guardedResolver = '!has_tool_calls(state["messages"]) ? ('.$edge->resolver.') : []';
+        // Both are strings
+        return new BranchEdge($edge->from, $this->negateExpression($condition) . ' ? (' . $edge->resolver . ') : []', $edge->targets);
+    }
 
-        return new BranchEdge($edge->from, $guardedResolver, $edge->targets);
+    /**
+     * Negate a string expression, simplifying not_empty/empty pairs.
+     */
+    private function negateExpression(string $condition): string
+    {
+        if (preg_match('/^not_empty\((.+)\)$/s', $condition, $m)) {
+            return 'empty(' . $m[1] . ')';
+        }
+
+        if (preg_match('/^empty\((.+)\)$/s', $condition, $m)) {
+            return 'not_empty(' . $m[1] . ')';
+        }
+
+        return 'not (' . $condition . ')';
     }
 
     private function validate(): void
@@ -290,27 +381,33 @@ class Workflow
      */
     public function toJson(): string
     {
-        foreach ($this->edges as $edge) {
+        // Run loop injection on a copy before serializing (same as compile())
+        $nodes = $this->nodes;
+        $edges = $this->edges;
+        $this->injectLoops($nodes, $edges);
+
+        foreach ($edges as $edge) {
             if (! $edge->isSerializable()) {
                 throw new \RuntimeException('Cannot serialize workflow: one or more edges contain Closure conditions.');
             }
         }
 
         $serializedNodes = array_map(function ($node) {
-            if ($node instanceof ToolExecutorNode) {
+            if ($node instanceof SerializableNode) {
                 return $node->toArray();
             }
 
             return is_string($node) ? $node : $node::class;
-        }, $this->nodes);
+        }, $nodes);
 
-        $serializedEdges = array_map(fn ($edge) => $edge->toArray(), $this->edges);
+        $serializedEdges = array_map(fn ($edge) => $edge->toArray(), $edges);
 
         return json_encode([
             'nodes' => $serializedNodes,
             'edges' => $serializedEdges,
             'reducerClass' => $this->reducerClass,
             'workflowName' => $this->workflowName,
+            'recursionLimit' => $this->recursionLimit,
             'interruptBefore' => $this->interruptBefore,
             'interruptAfter' => $this->interruptAfter,
         ], JSON_THROW_ON_ERROR);
