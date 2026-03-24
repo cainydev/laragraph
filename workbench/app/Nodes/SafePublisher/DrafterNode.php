@@ -28,7 +28,7 @@ class DrafterNode implements Node
             'draft' => $draft,
             'draft_attempt' => $attempt,
             'messages' => [
-                ['role' => 'assistant', 'content' => $draft],
+                ['type' => 'assistant', 'content' => $draft, 'tool_calls' => [], 'additional_content' => []],
             ],
         ];
     }

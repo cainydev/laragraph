@@ -78,8 +78,8 @@ it('error-recovery fails on first attempt then succeeds after resume with attemp
     expect($run->fresh()->status)->toBe(RunStatus::Failed);
     expect($run->fresh()->state)->toHaveKey('error');
 
-    // Simulate retry by starting fresh with attempt=1 so FlakyNode succeeds
-    $run2 = Laragraph::start('error-recovery', ['attempt' => 1]);
+    // Simulate retry by starting fresh with attempt=2 so FlakyNode succeeds
+    $run2 = Laragraph::start('error-recovery', ['attempt' => 2]);
 
     $fresh = $run2->fresh();
     expect($fresh->status)->toBe(RunStatus::Completed);

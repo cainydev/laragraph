@@ -12,7 +12,7 @@ class FlakyNode implements Node
         // Use context->attempt for real queue retries; fall back to state for sync-queue tests.
         $attempt = isset($state['attempt']) ? $state['attempt'] : $context->attempt;
 
-        if ($attempt < 1) {
+        if ($attempt < 2) {
             throw new \RuntimeException("Flaky node failed on attempt {$attempt}. Will retry.");
         }
 

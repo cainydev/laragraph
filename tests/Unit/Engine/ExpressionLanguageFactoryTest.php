@@ -18,7 +18,7 @@ $factory = new class
 it('has_tool_calls returns true when tool_calls present', function () use ($factory) {
     $el = $factory->make();
     $messages = [
-        ['role' => 'assistant', 'tool_calls' => [['id' => '1', 'name' => 'search']]],
+        ['type' => 'assistant', 'tool_calls' => [['id' => '1', 'name' => 'search']]],
     ];
 
     $result = $el->evaluate('has_tool_calls(messages)', ['messages' => $messages]);
@@ -29,7 +29,7 @@ it('has_tool_calls returns true when tool_calls present', function () use ($fact
 it('has_tool_calls returns false when no tool_calls', function () use ($factory) {
     $el = $factory->make();
     $messages = [
-        ['role' => 'assistant', 'content' => 'hello'],
+        ['type' => 'assistant', 'content' => 'hello'],
     ];
 
     $result = $el->evaluate('has_tool_calls(messages)', ['messages' => $messages]);

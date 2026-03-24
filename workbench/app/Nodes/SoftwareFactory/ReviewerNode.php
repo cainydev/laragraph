@@ -19,7 +19,7 @@ class ReviewerNode implements Node
         return [
             'review' => $review,
             'messages' => [
-                ['role' => 'assistant', 'content' => $review],
+                ['type' => 'assistant', 'content' => $review, 'tool_calls' => [], 'additional_content' => []],
             ],
         ];
     }

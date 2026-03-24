@@ -30,7 +30,7 @@ class CompilerNode implements Node
         return [
             'report' => $report,
             'messages' => [
-                ['role' => 'assistant', 'content' => $report],
+                ['type' => 'assistant', 'content' => $report, 'tool_calls' => [], 'additional_content' => []],
             ],
         ];
     }

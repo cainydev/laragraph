@@ -18,7 +18,7 @@ class PublishNode implements Node
             'published_at' => now()->toISOString(),
             'tweet' => $draft,
             'messages' => [
-                ['role' => 'assistant', 'content' => "Published: {$draft}"],
+                ['type' => 'assistant', 'content' => "Published: {$draft}", 'tool_calls' => [], 'additional_content' => []],
             ],
         ];
     }

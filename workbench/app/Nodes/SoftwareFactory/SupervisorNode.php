@@ -31,7 +31,7 @@ class SupervisorNode implements Node
             'iteration' => $iteration,
             'decision' => $decision,
             'messages' => [
-                ['role' => 'assistant', 'content' => $message],
+                ['type' => 'assistant', 'content' => $message, 'tool_calls' => [], 'additional_content' => []],
             ],
         ];
     }

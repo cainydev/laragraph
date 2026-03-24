@@ -24,7 +24,7 @@ class PlannerNode implements Node
         return [
             'queries' => $queries,
             'messages' => [
-                ['role' => 'assistant', 'content' => implode("\n", $queries)],
+                ['type' => 'assistant', 'content' => implode("\n", $queries), 'tool_calls' => [], 'additional_content' => []],
             ],
         ];
     }

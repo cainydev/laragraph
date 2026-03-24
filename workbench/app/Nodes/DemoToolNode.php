@@ -2,7 +2,7 @@
 
 namespace Workbench\App\Nodes;
 
-use Cainy\Laragraph\Nodes\ToolNode;
+use Cainy\Laragraph\Integrations\Prism\ToolNode;
 
 class DemoToolNode extends ToolNode
 {

@@ -21,7 +21,7 @@ PHP;
         return [
             'code' => $code,
             'messages' => [
-                ['role' => 'assistant', 'content' => "Here is the PHP code:\n```php\n{$code}\n```"],
+                ['type' => 'assistant', 'content' => "Here is the PHP code:\n```php\n{$code}\n```", 'tool_calls' => [], 'additional_content' => []],
             ],
         ];
     }
