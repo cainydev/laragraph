@@ -58,7 +58,7 @@ class DemoAgentNode implements Node
                 ->as('get_weather')
                 ->for('Get the current weather for a city')
                 ->withStringParameter('city', 'The city name')
-                ->using(fn (string $city): string => 'Sunny, 22°C in ' . $city),
+                ->using(fn (string $city): string => 'Sunny, 22°C in '.$city),
         ];
     }
 }

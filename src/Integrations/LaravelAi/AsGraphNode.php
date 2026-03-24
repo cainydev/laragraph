@@ -28,8 +28,6 @@ trait AsGraphNode
     /**
      * The orchestration context for the current node execution.
      * Populated immediately before the agent is executed.
-     *
-     * @var NodeExecutionContext|null
      */
     public ?NodeExecutionContext $ctx = null;
 
@@ -40,8 +38,6 @@ trait AsGraphNode
      *
      * If the implementing class also implements Laravel\Ai\Contracts\HasTools,
      * override this to delegate: return $this->tools();
-     *
-     * @return array
      */
     public function tools(): array
     {
@@ -51,8 +47,8 @@ trait AsGraphNode
     /**
      * Fulfill the Laragraph Node contract.
      *
-     * @param NodeExecutionContext $ctx Orchestration metadata.
-     * @param array<string, mixed> $state The current business state.
+     * @param  NodeExecutionContext  $ctx  Orchestration metadata.
+     * @param  array<string, mixed>  $state  The current business state.
      * @return array<string, mixed> The state mutations to apply.
      */
     public function handle(NodeExecutionContext $ctx, array $state): array
@@ -96,7 +92,7 @@ trait AsGraphNode
      * graph state keys. Override this if you need to map nested arrays or
      * rename keys before merging.
      *
-     * @param mixed $response The structured output response.
+     * @param  mixed  $response  The structured output response.
      * @return array<string, mixed>
      */
     protected function mutateStateWithStructuredOutput(mixed $response): array
@@ -111,7 +107,7 @@ trait AsGraphNode
      * response to the 'messages' state array as an 'assistant' message.
      * It tags the message with the Agent's class name to track who spoke.
      *
-     * @param string $response The raw text output from the LLM.
+     * @param  string  $response  The raw text output from the LLM.
      * @return array<string, mixed>
      */
     protected function mutateStateWithTextOutput(string $response): array

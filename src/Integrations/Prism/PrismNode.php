@@ -8,7 +8,6 @@ use Prism\Prism\Enums\Provider;
 use Prism\Prism\Prism;
 use Prism\Prism\Tool;
 use Prism\Prism\ValueObjects\Messages\AssistantMessage;
-use Prism\Prism\ValueObjects\ToolCall;
 
 class PrismNode implements Node
 {

@@ -17,7 +17,7 @@ class ToolExecutorNode implements HasName, Node
 
     public function name(): string
     {
-        return $this->parentNodeName . '.tools';
+        return $this->parentNodeName.'.tools';
     }
 
     public function handle(NodeExecutionContext $context, array $state): array

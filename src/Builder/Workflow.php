@@ -37,7 +37,7 @@ class Workflow
 
     public static function toolNode(string $nodeName): string
     {
-        return $nodeName . '.__tools__';
+        return $nodeName.'.__tools__';
     }
 
     /**
@@ -220,7 +220,7 @@ class Workflow
             });
         }
 
-        return new Edge($edge->from, $edge->to, '!has_tool_calls(state["messages"]) and (' . $edge->when . ')');
+        return new Edge($edge->from, $edge->to, '!has_tool_calls(state["messages"]) and ('.$edge->when.')');
     }
 
     private function guardBranchEdge(BranchEdge $edge): BranchEdge
@@ -241,7 +241,7 @@ class Workflow
         }
 
         // String expression: wrap with guard
-        $guardedResolver = '!has_tool_calls(state["messages"]) ? (' . $edge->resolver . ') : []';
+        $guardedResolver = '!has_tool_calls(state["messages"]) ? ('.$edge->resolver.') : []';
 
         return new BranchEdge($edge->from, $guardedResolver, $edge->targets);
     }
