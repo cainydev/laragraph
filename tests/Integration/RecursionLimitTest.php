@@ -4,7 +4,6 @@ use Cainy\Laragraph\Builder\Workflow;
 use Cainy\Laragraph\Contracts\Node;
 use Cainy\Laragraph\Engine\NodeExecutionContext;
 use Cainy\Laragraph\Enums\RunStatus;
-use Cainy\Laragraph\Exceptions\RecursionLimitExceeded;
 use Cainy\Laragraph\Facades\Laragraph;
 use Cainy\Laragraph\Models\WorkflowRun;
 
@@ -48,7 +47,8 @@ it('stops execution at the configured limit', function () {
 
     try {
         Laragraph::start('count-limit-test');
-    } catch (Throwable) {}
+    } catch (Throwable) {
+    }
 
     $run = WorkflowRun::latest()->first();
     // Should have stopped at the limit, not run indefinitely

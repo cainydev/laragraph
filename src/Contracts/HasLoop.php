@@ -14,8 +14,6 @@ interface HasLoop
     /**
      * Expression string or Closure evaluated against state.
      * When truthy, the loop edge fires instead of the normal exit edges.
-     *
-     * @return string|\Closure
      */
     public function loopCondition(): string|\Closure;
 }

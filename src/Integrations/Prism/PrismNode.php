@@ -10,7 +10,7 @@ use Prism\Prism\Prism;
 use Prism\Prism\Tool;
 use Prism\Prism\ValueObjects\Messages\AssistantMessage;
 
-class PrismNode implements Node, HasLoop
+class PrismNode implements HasLoop, Node
 {
     /**
      * @param  array<Tool>  $tools

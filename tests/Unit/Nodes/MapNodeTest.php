@@ -1,6 +1,8 @@
 <?php
 
 use Cainy\Laragraph\Builder\Workflow;
+use Cainy\Laragraph\Contracts\Node;
+use Cainy\Laragraph\Engine\NodeExecutionContext;
 use Cainy\Laragraph\Nodes\MapNode;
 use Cainy\Laragraph\Routing\Send;
 
@@ -57,8 +59,12 @@ it('deserializes from array', function () {
 it('round-trips via Workflow::fromJson()', function () {
     $workflow = Workflow::create()
         ->addNode('split', new MapNode('jobs', 'worker', 'job'))
-        ->addNode('worker', new class implements \Cainy\Laragraph\Contracts\Node {
-            public function handle(\Cainy\Laragraph\Engine\NodeExecutionContext $c, array $s): array { return []; }
+        ->addNode('worker', new class implements Node
+        {
+            public function handle(NodeExecutionContext $c, array $s): array
+            {
+                return [];
+            }
         })
         ->transition(Workflow::START, 'split')
         ->transition('split', 'worker')

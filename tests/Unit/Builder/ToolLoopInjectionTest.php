@@ -10,7 +10,7 @@ use Cainy\Laragraph\Integrations\Prism\ToolExecutor;
 // A fake node that implements HasLoop for testing
 function makeLoopNode(): Node&HasLoop
 {
-    return new class implements Node, HasLoop
+    return new class implements HasLoop, Node
     {
         public function handle(NodeExecutionContext $context, array $state): array
         {
@@ -19,10 +19,10 @@ function makeLoopNode(): Node&HasLoop
 
         public function loopNode(string $nodeName): Node
         {
-            return new ToolExecutor($nodeName, static::class);
+            return new ToolExecutor($nodeName, self::class);
         }
 
-        public function loopCondition(): string|\Closure
+        public function loopCondition(): string|Closure
         {
             return 'not_empty(last(state["messages"])["tool_calls"] ?? [])';
         }

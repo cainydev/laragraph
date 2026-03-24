@@ -10,16 +10,19 @@ use Cainy\Laragraph\Integrations\Prism\ToolExecutor;
 
 function makeLoopNodeForSerial(): Node&HasLoop
 {
-    return new class implements Node, HasLoop
+    return new class implements HasLoop, Node
     {
-        public function handle(NodeExecutionContext $context, array $state): array { return []; }
+        public function handle(NodeExecutionContext $context, array $state): array
+        {
+            return [];
+        }
 
         public function loopNode(string $nodeName): Node
         {
-            return new ToolExecutor($nodeName, static::class);
+            return new ToolExecutor($nodeName, self::class);
         }
 
-        public function loopCondition(): string|\Closure
+        public function loopCondition(): string|Closure
         {
             return 'not_empty(last(state["messages"])["tool_calls"] ?? [])';
         }
@@ -54,8 +57,12 @@ it('fromJson() round-trip restores the loop node injected by toJson() (bug 1.1 r
 
 it('toArray() on CompiledWorkflow includes workflowName (bug 1.2 regression)', function () {
     $compiled = Workflow::create()
-        ->addNode('a', new class implements Node {
-            public function handle(NodeExecutionContext $c, array $s): array { return []; }
+        ->addNode('a', new class implements Node
+        {
+            public function handle(NodeExecutionContext $c, array $s): array
+            {
+                return [];
+            }
         })
         ->transition(Workflow::START, 'a')
         ->transition('a', Workflow::END)
@@ -69,8 +76,12 @@ it('toArray() on CompiledWorkflow includes workflowName (bug 1.2 regression)', f
 
 it('toArray() on CompiledWorkflow includes recursionLimit (bug 1.2 extension)', function () {
     $compiled = Workflow::create()
-        ->addNode('a', new class implements Node {
-            public function handle(NodeExecutionContext $c, array $s): array { return []; }
+        ->addNode('a', new class implements Node
+        {
+            public function handle(NodeExecutionContext $c, array $s): array
+            {
+                return [];
+            }
         })
         ->transition(Workflow::START, 'a')
         ->transition('a', Workflow::END)
@@ -82,8 +93,12 @@ it('toArray() on CompiledWorkflow includes recursionLimit (bug 1.2 extension)', 
 
 it('child workflows preserve workflowName across startChildWorkflow snapshot', function () {
     $child = Workflow::create()
-        ->addNode('step', new class implements Node {
-            public function handle(NodeExecutionContext $c, array $s): array { return []; }
+        ->addNode('step', new class implements Node
+        {
+            public function handle(NodeExecutionContext $c, array $s): array
+            {
+                return [];
+            }
         })
         ->transition(Workflow::START, 'step')
         ->transition('step', Workflow::END)

@@ -8,19 +8,20 @@ use Cainy\Laragraph\Contracts\SerializableNode;
 use Cainy\Laragraph\Edges\BranchEdge;
 use Cainy\Laragraph\Edges\Edge;
 use Cainy\Laragraph\Engine\Concerns\EvaluatesExpressions;
-use Cainy\Laragraph\Nodes\GateNode;
-use Cainy\Laragraph\Nodes\MapNode;
-use Cainy\Laragraph\Nodes\ReduceNode;
-use Cainy\Laragraph\Nodes\HttpNode;
-use Cainy\Laragraph\Nodes\DelayNode;
-use Cainy\Laragraph\Nodes\CacheNode;
-use Cainy\Laragraph\Nodes\NotifyNode;
 use Cainy\Laragraph\Integrations\Prism\ToolExecutor;
+use Cainy\Laragraph\Nodes\CacheNode;
+use Cainy\Laragraph\Nodes\DelayNode;
+use Cainy\Laragraph\Nodes\GateNode;
+use Cainy\Laragraph\Nodes\HttpNode;
+use Cainy\Laragraph\Nodes\MapNode;
+use Cainy\Laragraph\Nodes\NotifyNode;
+use Cainy\Laragraph\Nodes\ReduceNode;
 use JsonException;
 
 class Workflow
 {
     use EvaluatesExpressions;
+
     public const string START = '__START__';
 
     public const string END = '__END__';
@@ -66,7 +67,7 @@ class Workflow
 
     public static function toolNode(string $nodeName): string
     {
-        return $nodeName . '.__loop__';
+        return $nodeName.'.__loop__';
     }
 
     /**
@@ -217,7 +218,7 @@ class Workflow
                 continue;
             }
 
-            $loopNodeName = $name . '.__loop__';
+            $loopNodeName = $name.'.__loop__';
             $nodes[$loopNodeName] = $node->loopNode($name);
             $condition = $node->loopCondition();
 
@@ -281,7 +282,7 @@ class Workflow
             });
         }
 
-        return new Edge($edge->from, $edge->to, $this->negateExpression($condition) . ' and (' . $edge->when . ')');
+        return new Edge($edge->from, $edge->to, $this->negateExpression($condition).' and ('.$edge->when.')');
     }
 
     private function guardBranchEdge(BranchEdge $edge, string|\Closure $condition): BranchEdge
@@ -318,7 +319,7 @@ class Workflow
         }
 
         // Both are strings
-        return new BranchEdge($edge->from, $this->negateExpression($condition) . ' ? (' . $edge->resolver . ') : []', $edge->targets);
+        return new BranchEdge($edge->from, $this->negateExpression($condition).' ? ('.$edge->resolver.') : []', $edge->targets);
     }
 
     /**
@@ -327,14 +328,14 @@ class Workflow
     private function negateExpression(string $condition): string
     {
         if (preg_match('/^not_empty\((.+)\)$/s', $condition, $m)) {
-            return 'empty(' . $m[1] . ')';
+            return 'empty('.$m[1].')';
         }
 
         if (preg_match('/^empty\((.+)\)$/s', $condition, $m)) {
-            return 'not_empty(' . $m[1] . ')';
+            return 'not_empty('.$m[1].')';
         }
 
-        return 'not (' . $condition . ')';
+        return 'not ('.$condition.')';
     }
 
     private function validate(): void

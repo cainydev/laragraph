@@ -8,7 +8,7 @@ use Cainy\Laragraph\Engine\NodeExecutionContext;
 use Cainy\Laragraph\Integrations\Prism\ToolExecutor;
 use Prism\Prism\Tool;
 
-class DemoAgentNode implements Node, HasLoop
+class DemoAgentNode implements HasLoop, Node
 {
     public function handle(NodeExecutionContext $context, array $state): array
     {

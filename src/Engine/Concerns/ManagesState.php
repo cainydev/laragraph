@@ -14,5 +14,4 @@ trait ManagesState
 
         return $newState;
     }
-
 }
