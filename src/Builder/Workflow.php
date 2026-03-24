@@ -5,6 +5,7 @@ namespace Cainy\Laragraph\Builder;
 use Cainy\Laragraph\Contracts\Node;
 use Cainy\Laragraph\Edges\BranchEdge;
 use Cainy\Laragraph\Edges\Edge;
+use Cainy\Laragraph\Nodes\ToolExecutorNode;
 use JsonException;
 
 class Workflow
@@ -34,6 +35,11 @@ class Workflow
         return new self;
     }
 
+    public static function toolNode(string $nodeName): string
+    {
+        return $nodeName . '.__tools__';
+    }
+
     /**
      * @throws JsonException
      */
@@ -49,8 +55,17 @@ class Workflow
             };
         }, $data['edges'] ?? []);
 
+        $nodes = [];
+        foreach ($data['nodes'] ?? [] as $name => $nodeData) {
+            if (is_array($nodeData) && ($nodeData['__synthetic'] ?? null) === 'tool_executor') {
+                $nodes[$name] = ToolExecutorNode::fromArray($nodeData);
+            } else {
+                $nodes[$name] = $nodeData;
+            }
+        }
+
         return new CompiledWorkflow(
-            nodes: $data['nodes'] ?? [],
+            nodes: $nodes,
             edges: $edges,
             reducerClass: $data['reducerClass'] ?? null,
             interruptBefore: $data['interruptBefore'] ?? [],
@@ -121,14 +136,114 @@ class Workflow
     {
         $this->validate();
 
+        $nodes = $this->nodes;
+        $edges = $this->edges;
+
+        $this->injectToolLoops($nodes, $edges);
+
         return new CompiledWorkflow(
-            nodes: $this->nodes,
-            edges: $this->edges,
+            nodes: $nodes,
+            edges: $edges,
             reducerClass: $this->reducerClass,
             interruptBefore: $this->interruptBefore,
             interruptAfter: $this->interruptAfter,
             workflowName: $this->workflowName,
         );
+    }
+
+    /**
+     * @param  array<string, string|Node>  $nodes
+     * @param  list<Edge|BranchEdge>  $edges
+     */
+    private function injectToolLoops(array &$nodes, array &$edges): void
+    {
+        $toolUsingNodes = [];
+
+        foreach ($nodes as $name => $node) {
+            if ($this->nodeHasTools($node)) {
+                $toolUsingNodes[$name] = $node;
+            }
+        }
+
+        foreach ($toolUsingNodes as $name => $node) {
+            $toolNodeName = self::toolNode($name);
+            $nodeClass = is_string($node) ? $node : $node::class;
+
+            // Add the synthetic tool executor node
+            $nodes[$toolNodeName] = new ToolExecutorNode($name, $nodeClass);
+
+            // Guard existing edges FROM this node with !has_tool_calls
+            $edges = array_map(function (Edge|BranchEdge $edge) use ($name): Edge|BranchEdge {
+                if ($edge->from !== $name) {
+                    return $edge;
+                }
+
+                if ($edge instanceof BranchEdge) {
+                    return $this->guardBranchEdge($edge);
+                }
+
+                return $this->guardEdge($edge);
+            }, $edges);
+
+            // Add tool loop edges
+            $edges[] = new Edge($name, $toolNodeName, 'has_tool_calls(state["messages"])');
+            $edges[] = new Edge($toolNodeName, $name);
+        }
+    }
+
+    private function nodeHasTools(string|Node $node): bool
+    {
+        if ($node instanceof Node) {
+            return method_exists($node, 'tools') && ! empty($node->tools());
+        }
+
+        // Class-string: trust that the method exists, can't call it without instantiation
+        return is_a($node, Node::class, true) && method_exists($node, 'tools');
+    }
+
+    private function guardEdge(Edge $edge): Edge
+    {
+        if ($edge->when === null) {
+            return new Edge($edge->from, $edge->to, '!has_tool_calls(state["messages"])');
+        }
+
+        if ($edge->when instanceof \Closure) {
+            $original = $edge->when;
+
+            return new Edge($edge->from, $edge->to, function (array $state) use ($original): bool {
+                $last = ! empty($state['messages']) ? end($state['messages']) : null;
+                if (! empty($last['tool_calls'])) {
+                    return false;
+                }
+
+                return (bool) $original($state);
+            });
+        }
+
+        return new Edge($edge->from, $edge->to, '!has_tool_calls(state["messages"]) and (' . $edge->when . ')');
+    }
+
+    private function guardBranchEdge(BranchEdge $edge): BranchEdge
+    {
+        if ($edge->resolver instanceof \Closure) {
+            $original = $edge->resolver;
+
+            return new BranchEdge($edge->from, function (array $state) use ($original): array {
+                $last = ! empty($state['messages']) ? end($state['messages']) : null;
+                if (! empty($last['tool_calls'])) {
+                    return [];
+                }
+
+                $result = $original($state);
+
+                return is_array($result) ? $result : [(string) $result];
+            }, $edge->targets);
+        }
+
+        // String expression: wrap with guard
+        $guardedResolver = '!has_tool_calls(state["messages"]) ? (' . $edge->resolver . ') : []';
+
+        return new BranchEdge($edge->from, $guardedResolver, $edge->targets);
     }
 
     private function validate(): void
@@ -182,6 +297,10 @@ class Workflow
         }
 
         $serializedNodes = array_map(function ($node) {
+            if ($node instanceof ToolExecutorNode) {
+                return $node->toArray();
+            }
+
             return is_string($node) ? $node : $node::class;
         }, $this->nodes);
 

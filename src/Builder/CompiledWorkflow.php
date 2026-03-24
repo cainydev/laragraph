@@ -11,6 +11,7 @@ use Cainy\Laragraph\Engine\NodeExecutionContext;
 use Cainy\Laragraph\Exceptions\NodePausedException;
 use Cainy\Laragraph\Laragraph;
 use Cainy\Laragraph\Models\WorkflowRun;
+use Cainy\Laragraph\Nodes\ToolExecutorNode;
 use Cainy\Laragraph\Routing\Send;
 
 class CompiledWorkflow implements HasName, Node
@@ -91,7 +92,13 @@ class CompiledWorkflow implements HasName, Node
     public function toArray(): array
     {
         $serializedNodes = array_map(
-            fn ($node) => is_string($node) ? $node : $node::class,
+            function ($node) {
+                if ($node instanceof ToolExecutorNode) {
+                    return $node->toArray();
+                }
+
+                return is_string($node) ? $node : $node::class;
+            },
             $this->nodes,
         );
 
