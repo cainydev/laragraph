@@ -20,7 +20,7 @@ class PlannerNode implements Node
             "Ethical concerns and limitations of {$topic}",
         ];
 
-        // Return the queries; the branch edge will fan out via Send
+        // Return the queries; the branch edge will send one job per query
         return [
             'queries' => $queries,
             'messages' => [

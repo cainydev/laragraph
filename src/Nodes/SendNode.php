@@ -7,13 +7,13 @@ use Cainy\Laragraph\Engine\NodeExecutionContext;
 use Cainy\Laragraph\Routing\Send;
 
 /**
- * Fan-out node — dispatches a Send for each item in a state list.
+ * Send node — dispatches a Send for each item in a state list.
  */
-final class MapNode implements SerializableNode
+final class SendNode implements SerializableNode
 {
     public function __construct(
         public readonly string $sourceKey,   // state key containing the list to iterate
-        public readonly string $targetNode,  // node name to fan-out to
+        public readonly string $targetNode,  // node name to send to
         public readonly string $payloadKey,  // key name for each item in the Send payload
     ) {}
 
@@ -33,7 +33,7 @@ final class MapNode implements SerializableNode
     public function toArray(): array
     {
         return [
-            '__synthetic' => 'map',
+            '__synthetic' => 'send',
             'source_key' => $this->sourceKey,
             'target_node' => $this->targetNode,
             'payload_key' => $this->payloadKey,

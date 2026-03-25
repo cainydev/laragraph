@@ -3,13 +3,13 @@
 use Cainy\Laragraph\Builder\Workflow;
 use Cainy\Laragraph\Contracts\Node;
 use Cainy\Laragraph\Engine\NodeExecutionContext;
-use Cainy\Laragraph\Nodes\MapNode;
+use Cainy\Laragraph\Nodes\SendNode;
 use Cainy\Laragraph\Routing\Send;
 
 use function Cainy\Laragraph\Tests\makeContext;
 
 it('returns one Send per item in the source key', function () {
-    $node = new MapNode(sourceKey: 'urls', targetNode: 'fetcher', payloadKey: 'url');
+    $node = new SendNode(sourceKey: 'urls', targetNode: 'fetcher', payloadKey: 'url');
 
     $result = $node->handle(makeContext(), ['urls' => ['http://a.com', 'http://b.com', 'http://c.com']]);
 
@@ -21,22 +21,22 @@ it('returns one Send per item in the source key', function () {
 });
 
 it('returns empty array when source key is absent', function () {
-    $node = new MapNode(sourceKey: 'items', targetNode: 'worker', payloadKey: 'item');
+    $node = new SendNode(sourceKey: 'items', targetNode: 'worker', payloadKey: 'item');
 
     expect($node->handle(makeContext(), []))->toBe([]);
 });
 
 it('returns empty array when source list is empty', function () {
-    $node = new MapNode(sourceKey: 'items', targetNode: 'worker', payloadKey: 'item');
+    $node = new SendNode(sourceKey: 'items', targetNode: 'worker', payloadKey: 'item');
 
     expect($node->handle(makeContext(), ['items' => []]))->toBe([]);
 });
 
 it('serializes to array', function () {
-    $node = new MapNode('urls', 'fetcher', 'url');
+    $node = new SendNode('urls', 'fetcher', 'url');
 
     expect($node->toArray())->toBe([
-        '__synthetic' => 'map',
+        '__synthetic' => 'send',
         'source_key' => 'urls',
         'target_node' => 'fetcher',
         'payload_key' => 'url',
@@ -44,8 +44,8 @@ it('serializes to array', function () {
 });
 
 it('deserializes from array', function () {
-    $node = MapNode::fromArray([
-        '__synthetic' => 'map',
+    $node = SendNode::fromArray([
+        '__synthetic' => 'send',
         'source_key' => 'items',
         'target_node' => 'processor',
         'payload_key' => 'item',
@@ -58,7 +58,11 @@ it('deserializes from array', function () {
 
 it('round-trips via Workflow::fromJson()', function () {
     $workflow = Workflow::create()
+<<<<<<< HEAD:tests/Unit/Nodes/MapNodeTest.php
         ->addNode('split', new MapNode('jobs', 'worker', 'job'))
+=======
+        ->addNode('split', new SendNode('jobs', 'worker', 'job'))
+>>>>>>> ff094b3 (refactor: rename MapNode → SendNode, each() → send(), add PHPStan baseline, rewrite README):tests/Unit/Nodes/SendNodeTest.php
         ->addNode('worker', new class implements Node
         {
             public function handle(NodeExecutionContext $c, array $s): array
@@ -73,7 +77,7 @@ it('round-trips via Workflow::fromJson()', function () {
     $compiled = Workflow::fromJson($workflow->toJson());
 
     $node = $compiled->resolveNode('split');
-    expect($node)->toBeInstanceOf(MapNode::class);
+    expect($node)->toBeInstanceOf(SendNode::class);
     expect($node->sourceKey)->toBe('jobs');
     expect($node->targetNode)->toBe('worker');
     expect($node->payloadKey)->toBe('job');

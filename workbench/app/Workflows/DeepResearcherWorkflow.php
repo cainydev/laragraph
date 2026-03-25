@@ -17,7 +17,7 @@ class DeepResearcherWorkflow
             ->addNode('research-worker', ResearchWorkerNode::class)
             ->addNode('compiler', CompilerNode::class)
             ->transition(Workflow::START, 'planner')
-            // Dynamic fan-out: spin up one research-worker job per query via Send API
+            // Send one research-worker job per query
             ->branch('planner', function (array $state): array {
                 return array_map(
                     fn (string $query) => new Send('research-worker', ['search_query' => $query]),

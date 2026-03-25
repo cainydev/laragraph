@@ -113,9 +113,9 @@ trait EvaluatesExpressions
             },
         ));
 
-        // each(node, items, key) — fan-out Send objects for dynamic routing
+        // send(node, items, key) — Send objects for dynamic routing
         $el->addFunction(new ExpressionFunction(
-            'each',
+            'send',
             fn ($nodeName, $items, $payloadKey) => sprintf(
                 'array_map(fn($item) => new \\Cainy\\Laragraph\\Routing\\Send(%s, [%s => $item]), %s)',
                 $nodeName,

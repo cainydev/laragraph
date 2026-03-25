@@ -13,9 +13,9 @@ use Cainy\Laragraph\Nodes\CacheNode;
 use Cainy\Laragraph\Nodes\DelayNode;
 use Cainy\Laragraph\Nodes\GateNode;
 use Cainy\Laragraph\Nodes\HttpNode;
-use Cainy\Laragraph\Nodes\MapNode;
 use Cainy\Laragraph\Nodes\NotifyNode;
 use Cainy\Laragraph\Nodes\ReduceNode;
+use Cainy\Laragraph\Nodes\SendNode;
 use JsonException;
 
 class Workflow
@@ -52,7 +52,7 @@ class Workflow
     private static array $syntheticTypes = [
         'tool_executor' => ToolExecutor::class,
         'gate' => GateNode::class,
-        'map' => MapNode::class,
+        'send' => SendNode::class,
         'reduce' => ReduceNode::class,
         'http' => HttpNode::class,
         'delay' => DelayNode::class,

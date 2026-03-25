@@ -88,11 +88,11 @@ it('join() implodes array', function () use ($factory) {
     expect($result)->toBe('a, b, c');
 });
 
-it('each() returns Send objects for each item', function () use ($factory) {
+it('send() returns Send objects for each item', function () use ($factory) {
     $el = $factory->make();
 
     $result = $el->evaluate(
-        "each('worker', state['urls'], 'url')",
+        "send('worker', state['urls'], 'url')",
         ['state' => ['urls' => ['http://a.com', 'http://b.com']]],
     );
 
@@ -103,11 +103,11 @@ it('each() returns Send objects for each item', function () use ($factory) {
     expect($result[1]->payload)->toBe(['url' => 'http://b.com']);
 });
 
-it('each() returns empty array for empty items', function () use ($factory) {
+it('send() returns empty array for empty items', function () use ($factory) {
     $el = $factory->make();
 
     $result = $el->evaluate(
-        "each('worker', state['urls'], 'url')",
+        "send('worker', state['urls'], 'url')",
         ['state' => ['urls' => []]],
     );
 

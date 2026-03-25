@@ -3,13 +3,12 @@
 namespace Cainy\Laragraph\Routing;
 
 /**
- * Send API — dispatch a node with an isolated payload (map-reduce / dynamic fan-out).
+ * Send — dispatch a node with an isolated payload.
  *
  * Usage in a BranchEdge resolver:
  *   return array_map(fn ($url) => new Send('fetch_url', ['url' => $url]), $state['urls']);
  *
- * Or via the send_all() ExpressionLanguage helper:
- *   send_all('fetch_url', state['urls'], 'url')
+ * Or via the SendNode prebuilt or send() ExpressionLanguage helper.
  */
 final class Send
 {
