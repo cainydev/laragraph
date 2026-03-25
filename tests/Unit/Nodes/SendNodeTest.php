@@ -58,11 +58,7 @@ it('deserializes from array', function () {
 
 it('round-trips via Workflow::fromJson()', function () {
     $workflow = Workflow::create()
-<<<<<<< HEAD:tests/Unit/Nodes/MapNodeTest.php
-        ->addNode('split', new MapNode('jobs', 'worker', 'job'))
-=======
         ->addNode('split', new SendNode('jobs', 'worker', 'job'))
->>>>>>> ff094b3 (refactor: rename MapNode → SendNode, each() → send(), add PHPStan baseline, rewrite README):tests/Unit/Nodes/SendNodeTest.php
         ->addNode('worker', new class implements Node
         {
             public function handle(NodeExecutionContext $c, array $s): array

@@ -2,7 +2,6 @@
 
 namespace Cainy\Laragraph\Integrations\Prism;
 
-use Illuminate\Contracts\Support\Arrayable;
 use Prism\Prism\Contracts\Message;
 use Prism\Prism\ValueObjects\Messages\AssistantMessage;
 use Prism\Prism\ValueObjects\Messages\SystemMessage;
@@ -16,12 +15,47 @@ class MessageSerializer
     /**
      * Convert Prism Message objects to plain arrays for JSON storage.
      *
-     * @param  array<Message&Arrayable<string, mixed>>  $messages
+     * @param  array<Message>  $messages
      * @return array<array<string, mixed>>
      */
     public static function dehydrate(array $messages): array
     {
-        return array_map(fn (Message&Arrayable $message): array => $message->toArray(), $messages);
+        return array_map(function (Message $message): array {
+            return match (true) {
+                $message instanceof AssistantMessage => [
+                    'type' => 'assistant',
+                    'content' => $message->content,
+                    'tool_calls' => array_map(fn (ToolCall $tc): array => [
+                        'id' => $tc->id,
+                        'name' => $tc->name,
+                        'arguments' => $tc->arguments(),
+                        'result_id' => $tc->resultId,
+                        'reasoning_id' => $tc->reasoningId,
+                        'reasoning_summary' => $tc->reasoningSummary,
+                    ], $message->toolCalls),
+                    'additional_content' => $message->additionalContent,
+                ],
+                $message instanceof UserMessage => [
+                    'type' => 'user',
+                    'content' => $message->content,
+                ],
+                $message instanceof SystemMessage => [
+                    'type' => 'system',
+                    'content' => $message->content,
+                ],
+                $message instanceof ToolResultMessage => [
+                    'type' => 'tool_result',
+                    'tool_results' => array_map(fn (ToolResult $tr): array => [
+                        'tool_call_id' => $tr->toolCallId,
+                        'tool_name' => $tr->toolName,
+                        'args' => $tr->args,
+                        'result' => $tr->result,
+                        'tool_call_result_id' => $tr->toolCallResultId,
+                    ], $message->toolResults),
+                ],
+                default => throw new \InvalidArgumentException('Cannot dehydrate unknown message type: '.get_class($message)),
+            };
+        }, $messages);
     }
 
     /**
