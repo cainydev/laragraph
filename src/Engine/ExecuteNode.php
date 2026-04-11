@@ -19,6 +19,7 @@ use Cainy\Laragraph\Exceptions\NodeExecutionException;
 use Cainy\Laragraph\Exceptions\NodePausedException;
 use Cainy\Laragraph\Exceptions\RecursionLimitExceeded;
 use Cainy\Laragraph\Laragraph;
+use Cainy\Laragraph\Models\NodeExecution;
 use Cainy\Laragraph\Models\WorkflowRun;
 use Cainy\Laragraph\Routing\Send;
 use Illuminate\Bus\Queueable;
@@ -56,6 +57,11 @@ class ExecuteNode implements ShouldQueue
         if ($connection !== null) {
             $this->onConnection($connection);
         }
+    }
+
+    public function displayName(): string
+    {
+        return "ExecuteNode [{$this->nodeName}] on run [{$this->runId}]";
     }
 
     public function backoff(): array
@@ -158,6 +164,16 @@ class ExecuteNode implements ShouldQueue
 
                 $tags = $node instanceof HasTags ? $node->tags() : [];
                 Event::dispatch(new NodeCompleted($this->runId, $this->nodeName, $mutation, $tags));
+
+                if ($node instanceof HasTags && ! empty($tags)) {
+                    NodeExecution::create([
+                        'run_id' => $this->runId,
+                        'node_name' => $this->nodeName,
+                        'attempt' => $this->attempts(),
+                        'tags' => $tags,
+                        'executed_at' => now(),
+                    ]);
+                }
 
                 // interrupt_after: pause AFTER node runs but BEFORE edges evaluate
                 if ($workflow->shouldInterruptAfter($this->nodeName)) {

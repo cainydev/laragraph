@@ -267,7 +267,7 @@ use Cainy\Laragraph\Facades\Laragraph;
 
 public function boot(): void
 {
-    Laragraph::register('my-pipeline', fn() => MyPipelineWorkflow::build());
+    Laragraph::register('my-pipeline', MyPipelineWorkflow::class);
 }
 ```
 
@@ -278,6 +278,12 @@ Or register them via the config file:
 'workflows' => [
     'my-pipeline' => MyPipelineWorkflow::class,
 ],
+```
+
+Both forms resolve the class via the container and call its `build()` method automatically. A callable is also accepted if you need to pass arguments:
+
+```php
+Laragraph::register('my-pipeline', fn() => MyPipelineWorkflow::build(someOption: true));
 ```
 
 ### Starting a Run
@@ -454,22 +460,63 @@ class ResearchAgentNode implements Node, HasName
 
 ### HasTags
 
-Emit metadata alongside the `NodeCompleted` event — useful for tracking token usage, model names, cost centers, or tenant IDs:
+Emit metadata alongside each node execution — useful for tracking token usage, model names, cost centers, or tenant IDs. Tags are automatically persisted to the `workflow_node_executions` table and broadcast on the `NodeCompleted` event:
 
 ```php
 use Cainy\Laragraph\Contracts\HasTags;
 
 class LLMNode implements Node, HasTags
 {
+    private string $model = '';
+    private int $tokens = 0;
+
+    public function handle(NodeExecutionContext $context, array $state): array
+    {
+        // ... call LLM, populate $this->model and $this->tokens ...
+        return ['response' => $result];
+    }
+
     public function tags(): array
     {
         return [
-            'model'       => 'claude-sonnet-4-6',
-            'cost_center' => 'marketing',
+            'model'    => $this->model,
+            'tokens'   => $this->tokens,
+            'cost_usd' => $this->tokens * 0.000003,
         ];
     }
 }
 ```
+
+The engine calls `tags()` after `handle()` returns, so the node can accumulate values during execution and expose them at the end.
+
+#### Querying execution history
+
+Each execution is stored as a `NodeExecution` record linked to its `WorkflowRun`:
+
+```php
+use Cainy\Laragraph\Models\NodeExecution;
+
+// All executions for a run
+$run->nodeExecutions;
+
+// Total cost for a run
+$totalCost = $run->nodeExecutions
+    ->sum(fn($e) => $e->tags['cost_usd'] ?? 0);
+
+// Per-node cost breakdown
+$costByNode = $run->nodeExecutions
+    ->groupBy('node_name')
+    ->map(fn($execs) => $execs->sum(fn($e) => $e->tags['cost_usd'] ?? 0));
+
+// Cost per tool-loop iteration (ordered by execution time)
+$run->nodeExecutions()
+    ->where('node_name', 'llm-agent')
+    ->orderBy('executed_at')
+    ->get()
+    ->pluck('tags.cost_usd');
+```
+
+`NodeExecution` columns: `run_id`, `node_name`, `attempt`, `tags` (JSON), `executed_at`.
 
 ### HasRetryPolicy
 

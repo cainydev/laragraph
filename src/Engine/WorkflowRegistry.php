@@ -41,7 +41,8 @@ class WorkflowRegistry
         if (is_callable($definition)) {
             $workflow = $definition();
         } else {
-            $workflow = app($definition);
+            $instance = app($definition);
+            $workflow = method_exists($instance, 'build') ? $instance->build() : $instance;
         }
 
         if ($workflow instanceof CompiledWorkflow) {

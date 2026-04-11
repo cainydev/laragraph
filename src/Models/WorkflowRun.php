@@ -97,6 +97,11 @@ class WorkflowRun extends Model
         return $this->hasMany(self::class, 'parent_run_id');
     }
 
+    public function nodeExecutions(): HasMany
+    {
+        return $this->hasMany(NodeExecution::class, 'run_id');
+    }
+
     public function prunable(): Builder
     {
         $days = config('laragraph.prunable_after_days', 30);
