@@ -16,6 +16,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class NodeExecution extends Model
 {
+    protected $table = 'workflow_node_executions';
+
     public $timestamps = false;
 
     protected $fillable = [
