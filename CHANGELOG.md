@@ -2,6 +2,20 @@
 
 All notable changes to `laragraph` will be documented in this file.
 
+## v0.1.7 - 2026-04-11
+
+### Bug fixes
+
+**Gemini thinking models: INVALID_ARGUMENT on multi-turn tool loops**
+
+When using Gemini thinking models (e.g. `gemini-3.1-pro-preview`) with `PrismNode`'s tool loop, the second `handle()` call was failing with:
+
+> `INVALID_ARGUMENT - Please ensure that function call turn comes immediately after a user turn or after a function response turn.`
+
+Root cause: Gemini returns a `thoughtSignature` (reasoning ID) on `functionCall` parts in thinking model responses. `MessageSerializer::dehydrate()` was storing this as `reasoning_id` on tool calls, and `hydrate()` was passing it back to `ToolCall` — which caused Prism's Gemini `MessageMap` to include `thoughtSignature` in the reconstructed assistant message. Gemini rejects its own thought signatures when reflected back in subsequent requests.
+
+Fix: `MessageSerializer::hydrate()` no longer restores `reasoningId`/`reasoningSummary` on `ToolCall` objects. These are response-only annotations and must not be sent back to the API.
+
 ## v0.1.6 - 2026-04-11
 
 ### Bug fixes
@@ -28,6 +42,7 @@ Nodes implementing `HasTags` now have their tags automatically persisted to a ne
 $run->nodeExecutions->sum(fn($e) => $e->tags['cost_usd'] ?? 0);
 
 
+
 ```
 See the [HasTags docs](README.md#hastags) for the full API.
 
@@ -37,6 +52,7 @@ Both `Laragraph::register()` and the `workflows` config key now accept a bare cl
 
 ```php
 Laragraph::register('my-pipeline', MyPipelineWorkflow::class);
+
 
 
 ```
