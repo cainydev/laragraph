@@ -79,8 +79,9 @@ class ExecuteNode implements ShouldQueue
         $completed = false;
         $parentRunId = null;
         $parentNodeName = null;
+        $directSends = [];
 
-        DB::transaction(function () use (&$nextTargets, &$completed, &$parentRunId, &$parentNodeName): void {
+        DB::transaction(function () use (&$nextTargets, &$completed, &$parentRunId, &$parentNodeName, &$directSends): void {
             /** @var WorkflowRun $run */
             $run = WorkflowRun::lockForUpdate()->findOrFail($this->runId);
 
@@ -158,7 +159,18 @@ class ExecuteNode implements ShouldQueue
                     throw new NodeExecutionException($this->nodeName, $this->runId, previous: $e);
                 }
 
-                $newState = $this->applyMutation($run, $mutation, $reducer);
+                // If the node returned Send objects directly, treat them as fan-out
+                // targets rather than a state mutation (e.g. SendNode).
+                $directSends = is_array($mutation) && ! empty($mutation) && array_is_list($mutation)
+                    && count(array_filter($mutation, fn ($v) => $v instanceof Send)) === count($mutation)
+                    ? $mutation
+                    : [];
+
+                if (empty($directSends)) {
+                    $newState = $this->applyMutation($run, $mutation, $reducer);
+                } else {
+                    $newState = $run->state;
+                }
                 unset($newState['__interrupt']);
                 $run->state = $newState;
 
@@ -187,7 +199,11 @@ class ExecuteNode implements ShouldQueue
                 }
             }
 
-            $nextTargets = $workflow->resolveNextNodes($this->nodeName, $newState);
+            // If the node returned Send objects directly, use them as the sole routing
+            // targets — skip edge resolution entirely (e.g. SendNode with ->transition()).
+            $nextTargets = ! empty($directSends)
+                ? $directSends
+                : $workflow->resolveNextNodes($this->nodeName, $newState);
 
             // Separate plain node names from Send objects; filter out END
             $nextNodeNames = array_values(array_filter(
