@@ -19,7 +19,7 @@ function registerTestWorkflow(string $name, Workflow $workflow): string
 /**
  * Build a minimal NodeExecutionContext for unit-testing nodes.
  */
-function makeContext(int $runId = 1, string $nodeName = 'test', int $attempt = 1, ?array $isolatedPayload = null): NodeExecutionContext
+function makeContext(int $runId = 1, string $nodeName = 'test', int $attempt = 1, ?array $isolatedPayload = null, int $pendingCount = 1): NodeExecutionContext
 {
     return new NodeExecutionContext(
         runId: $runId,
@@ -29,5 +29,6 @@ function makeContext(int $runId = 1, string $nodeName = 'test', int $attempt = 1
         maxAttempts: 3,
         createdAt: new \DateTimeImmutable,
         isolatedPayload: $isolatedPayload,
+        pendingCount: $pendingCount,
     );
 }

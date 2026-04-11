@@ -102,9 +102,8 @@ class MessageSerializer
                 name: $tc['name'],
                 arguments: $tc['arguments'],
                 resultId: $tc['result_id'] ?? null,
-                // reasoningId / reasoningSummary are Gemini-internal response annotations
-                // (thoughtSignature). Reflecting them back in subsequent requests causes
-                // INVALID_ARGUMENT errors on thinking models — omit them on hydration.
+                reasoningId: $tc['reasoning_id'] ?? null,
+                reasoningSummary: $tc['reasoning_summary'] ?? null,
             ),
             $data['tool_calls'] ?? [],
         );

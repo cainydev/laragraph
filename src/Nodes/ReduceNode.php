@@ -4,7 +4,7 @@ namespace Cainy\Laragraph\Nodes;
 
 use Cainy\Laragraph\Contracts\SerializableNode;
 use Cainy\Laragraph\Engine\NodeExecutionContext;
-use Cainy\Laragraph\Exceptions\NodePausedException;
+use Cainy\Laragraph\Exceptions\NodeSkippedException;
 
 /**
  * Fan-in barrier node — waits until a required number of items have accumulated
@@ -20,6 +20,12 @@ final class ReduceNode implements SerializableNode
 
     public function handle(NodeExecutionContext $context, array $state): array
     {
+        // Skip if other fan-in arrivals are still pending — only the last arrival
+        // (pendingCount === 1) proceeds to evaluate edges and dispatch the next node.
+        if ($context->pendingCount > 1) {
+            throw new NodeSkippedException($context->nodeName);
+        }
+
         $collected = $state[$this->collectKey] ?? [];
         $actualCount = is_array($collected) ? count($collected) : 0;
 
@@ -28,7 +34,7 @@ final class ReduceNode implements SerializableNode
             : (int) ($state[$this->countFromKey ?? ''] ?? 0);
 
         if ($actualCount < $expected) {
-            throw new NodePausedException(nodeName: $context->nodeName);
+            throw new NodeSkippedException($context->nodeName);
         }
 
         return [];

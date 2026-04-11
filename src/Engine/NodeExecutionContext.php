@@ -15,10 +15,16 @@ readonly class NodeExecutionContext
         public int $maxAttempts,
         public DateTimeImmutable $createdAt,
         public ?array $isolatedPayload = null,
+        public int $pendingCount = 1,
     ) {}
 
     public static function fromJob(WorkflowRun $run, string $nodeName, int $attempt, int $maxAttempts, ?array $isolatedPayload = null): self
     {
+        $pendingCount = count(array_filter(
+            $run->active_pointers ?? [],
+            fn (string $p) => $p === $nodeName,
+        ));
+
         return new self(
             runId: $run->id,
             workflowKey: $run->key ?? '',
@@ -27,6 +33,7 @@ readonly class NodeExecutionContext
             maxAttempts: $maxAttempts,
             createdAt: $run->created_at->toDateTimeImmutable(),
             isolatedPayload: $isolatedPayload,
+            pendingCount: max(1, $pendingCount),
         );
     }
 }

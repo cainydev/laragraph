@@ -17,6 +17,7 @@ use Cainy\Laragraph\Events\WorkflowCompleted;
 use Cainy\Laragraph\Events\WorkflowFailed;
 use Cainy\Laragraph\Exceptions\NodeExecutionException;
 use Cainy\Laragraph\Exceptions\NodePausedException;
+use Cainy\Laragraph\Exceptions\NodeSkippedException;
 use Cainy\Laragraph\Exceptions\RecursionLimitExceeded;
 use Cainy\Laragraph\Laragraph;
 use Cainy\Laragraph\Models\NodeExecution;
@@ -137,6 +138,22 @@ class ExecuteNode implements ShouldQueue
 
                 try {
                     $mutation = $node->handle($context, $run->state);
+                } catch (NodeSkippedException) {
+                    // Node signalled it should be silently skipped (e.g. ReduceNode waiting
+                    // for remaining fan-in arrivals). Remove pointer; don't evaluate edges.
+                    $run->node_executions = max(0, $run->node_executions - 1);
+                    $this->removePointer($run, $this->nodeName);
+
+                    if (! $this->hasActivePointers($run)) {
+                        $run->status = RunStatus::Completed;
+                        $completed = true;
+                        $parentRunId = $run->parent_run_id;
+                        $parentNodeName = $run->parent_node_name;
+                    }
+
+                    $run->save();
+
+                    return;
                 } catch (NodePausedException $e) {
                     // Apply any state the node wants to persist (e.g. child run ID) before pausing.
                     $pauseState = array_merge($run->state, $e->stateMutation, ['__interrupt' => $this->nodeName]);
