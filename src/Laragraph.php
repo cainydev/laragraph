@@ -30,16 +30,17 @@ readonly class Laragraph
      *
      * @throws Throwable
      */
-    public function run(string $workflowClass, array $initialState = []): WorkflowRun
+    public function run(string $workflowClass, array $initialState = [], array $metadata = []): WorkflowRun
     {
         $workflow = app($workflowClass);
         $compiled = $workflow->compile();
         $startTargets = $compiled->getStartNodes($initialState);
 
-        $run = DB::transaction(function () use ($workflowClass, $initialState, $startTargets): WorkflowRun {
+        $run = DB::transaction(function () use ($workflowClass, $initialState, $startTargets, $metadata): WorkflowRun {
             $run = WorkflowRun::create([
                 'key' => $workflowClass,
                 'state' => $initialState,
+                'metadata' => $metadata ?: null,
                 'status' => RunStatus::Running,
             ]);
 
@@ -50,6 +51,8 @@ readonly class Laragraph
         });
 
         Event::dispatch(new WorkflowStarted($run->id, $workflowClass));
+
+        $workflow->onStarting($run);
 
         $this->dispatchTargets($run->id, $startTargets, $compiled);
 

@@ -132,13 +132,6 @@ class ExecuteNode implements ShouldQueue
      */
     public function handle(): void
     {
-        // -----------------------------------------------------------------------
-        // Phase 1 — Pre-execution read (no lock).
-        // Read enough to decide whether to run the node at all, then execute it
-        // outside any transaction so long I/O (LLM calls, HTTP, etc.) never holds
-        // a row lock.
-        // -----------------------------------------------------------------------
-
         /** @var WorkflowRun $run */
         $run = WorkflowRun::findOrFail($this->runId);
 
@@ -187,11 +180,6 @@ class ExecuteNode implements ShouldQueue
 
             $context = NodeExecutionContext::fromJob($run, $this->nodeName, $this->attempts(), $this->tries, $this->isolatedPayload);
 
-            // -----------------------------------------------------------------------
-            // Phase 2 — Node execution (outside the lock).
-            // LLM calls, HTTP requests, etc. happen here with no row lock held.
-            // -----------------------------------------------------------------------
-
             try {
                 $mutation = $node->handle($context, $run->state);
             } catch (NodeSkippedException) {
@@ -209,11 +197,6 @@ class ExecuteNode implements ShouldQueue
             $mutation = [];
             $node = $workflow->resolveNode($this->nodeName);
         }
-
-        // -----------------------------------------------------------------------
-        // Phase 3 — Commit (short locked transaction).
-        // Re-read fresh state, apply mutation, evaluate edges, update pointers.
-        // -----------------------------------------------------------------------
 
         /** @var array<string|Send> $nextTargets */
         $nextTargets = [];
@@ -299,6 +282,7 @@ class ExecuteNode implements ShouldQueue
 
         if ($completed) {
             Event::dispatch(new WorkflowCompleted($this->runId, $workflowKey));
+            $this->fireCompletedHook($workflowKey);
 
             if ($parentRunId !== null && $parentNodeName !== null) {
                 app(Laragraph::class)->resumeFromChild($parentRunId, $parentNodeName);
@@ -350,6 +334,7 @@ class ExecuteNode implements ShouldQueue
 
         if ($completed) {
             Event::dispatch(new WorkflowCompleted($this->runId, $workflowKey));
+            $this->fireCompletedHook($workflowKey);
 
             if ($parentRunId !== null && $parentNodeName !== null) {
                 app(Laragraph::class)->resumeFromChild($parentRunId, $parentNodeName);
@@ -437,6 +422,7 @@ class ExecuteNode implements ShouldQueue
             $workflowKey = $this->markFailed($root);
             Event::dispatch(new NodeFailed($this->runId, $this->nodeName, $root));
             Event::dispatch(new WorkflowFailed($this->runId, $root, $workflowKey));
+            $this->fireFailedHook($workflowKey, $root);
 
             return;
         }
@@ -456,6 +442,7 @@ class ExecuteNode implements ShouldQueue
                         $workflowKey = $this->markFailed($root);
                         Event::dispatch(new NodeFailed($this->runId, $this->nodeName, $root));
                         Event::dispatch(new WorkflowFailed($this->runId, $root, $workflowKey));
+                        $this->fireFailedHook($workflowKey, $root);
 
                         return;
                     }
@@ -469,6 +456,7 @@ class ExecuteNode implements ShouldQueue
 
         Event::dispatch(new NodeFailed($this->runId, $this->nodeName, $root));
         Event::dispatch(new WorkflowFailed($this->runId, $root, $workflowKey));
+        $this->fireFailedHook($workflowKey, $root);
     }
 
     private function markFailed(Throwable $root): string
@@ -503,6 +491,30 @@ class ExecuteNode implements ShouldQueue
         });
 
         return $workflowKey;
+    }
+
+    private function fireCompletedHook(string $workflowKey): void
+    {
+        try {
+            $run = WorkflowRun::find($this->runId);
+            if ($run === null || $workflowKey === '') {
+                return;
+            }
+            app($workflowKey)->onCompleted($run);
+        } catch (Throwable) {
+        }
+    }
+
+    private function fireFailedHook(string $workflowKey, Throwable $exception): void
+    {
+        try {
+            $run = WorkflowRun::find($this->runId);
+            if ($run === null || $workflowKey === '') {
+                return;
+            }
+            app($workflowKey)->onFailed($run, $exception);
+        } catch (Throwable) {
+        }
     }
 
     private function hydrateWorkflow(WorkflowRun $run): CompiledWorkflow

@@ -21,6 +21,7 @@ use Throwable;
  * @property string|null $parent_node_name
  * @property string|null $key
  * @property array $state
+ * @property array|null $metadata
  * @property RunStatus $status
  * @property string $current
  * @property array $active_pointers
@@ -38,6 +39,7 @@ class WorkflowRun extends Model
         'parent_node_name',
         'key',
         'state',
+        'metadata',
         'status',
         'current',
         'active_pointers',
@@ -119,6 +121,7 @@ class WorkflowRun extends Model
     {
         return [
             'state' => 'array',
+            'metadata' => 'array',
             'status' => RunStatus::class,
             'active_pointers' => 'array',
         ];

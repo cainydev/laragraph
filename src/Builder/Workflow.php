@@ -34,10 +34,6 @@ class Workflow implements HasName, Node
     /** @var string[] */
     private array $interruptAfter = [];
 
-    // -------------------------------------------------------------------------
-    // HasName + Node implementation (sub-graph support)
-    // -------------------------------------------------------------------------
-
     public function name(): string
     {
         return static::class;
@@ -101,19 +97,26 @@ class Workflow implements HasName, Node
         return $diff;
     }
 
-    // -------------------------------------------------------------------------
-    // Definition hook (override in subclasses)
-    // -------------------------------------------------------------------------
-
     /**
      * Define the workflow's nodes and edges.
      * Override this method in subclasses instead of calling compile() directly.
      */
     public function definition(): void {}
 
-    // -------------------------------------------------------------------------
-    // Builder API
-    // -------------------------------------------------------------------------
+    /**
+     * Called after the WorkflowRun is persisted and before the first nodes are dispatched.
+     */
+    public function onStarting(WorkflowRun $run): void {}
+
+    /**
+     * Called after all nodes have completed and the run status is set to Completed.
+     */
+    public function onCompleted(WorkflowRun $run): void {}
+
+    /**
+     * Called after a node failure has exhausted all retries and the run status is set to Failed.
+     */
+    public function onFailed(WorkflowRun $run, \Throwable $exception): void {}
 
     public static function toolNode(string $nodeName): string
     {
@@ -207,10 +210,6 @@ class Workflow implements HasName, Node
         );
     }
 
-    // -------------------------------------------------------------------------
-    // Loop injection
-    // -------------------------------------------------------------------------
-
     /**
      * @param  array<string, string|Node>  $nodes
      * @param  list<Edge|BranchEdge>  $edges
@@ -283,10 +282,6 @@ class Workflow implements HasName, Node
             return is_array($result) ? $result : [(string) $result];
         }, $edge->targets);
     }
-
-    // -------------------------------------------------------------------------
-    // Validation
-    // -------------------------------------------------------------------------
 
     private function validate(): void
     {
