@@ -2,18 +2,14 @@
 
 namespace Cainy\Laragraph\Edges;
 
-use Cainy\Laragraph\Engine\Concerns\EvaluatesExpressions;
-
 class BranchEdge
 {
-    use EvaluatesExpressions;
-
     /**
      * @param  string[]  $targets  Possible destination node names (used for visualization).
      */
     public function __construct(
         public readonly string $from,
-        public readonly \Closure|string $resolver,
+        public readonly \Closure $resolver,
         public readonly array $targets = [],
     ) {}
 
@@ -22,59 +18,8 @@ class BranchEdge
      */
     public function resolve(array $state): array
     {
-        if ($this->resolver instanceof \Closure) {
-            $result = ($this->resolver)($state);
-        } else {
-            $result = $this->makeExpressionLanguage()->evaluate($this->resolver, ['state' => $state]);
-        }
+        $result = ($this->resolver)($state);
 
         return is_array($result) ? $result : [(string) $result];
-    }
-
-    public function isSerializable(): bool
-    {
-        return ! ($this->resolver instanceof \Closure);
-    }
-
-    public function toArray(): array
-    {
-        if ($this->isSerializable()) {
-            return [
-                'type' => 'branch',
-                'from' => $this->from,
-                'resolver' => $this->resolver,
-                'targets' => $this->targets,
-            ];
-        }
-
-        // Closure resolvers cannot be serialized, but targets are enough for visualization.
-        if (empty($this->targets)) {
-            throw new \RuntimeException(
-                "Cannot serialize BranchEdge [{$this->from}]: 'resolver' is a Closure and no 'targets' were declared. ".
-                'Pass targets to ->branch() so the graph can be visualized.'
-            );
-        }
-
-        return [
-            'type' => 'branch',
-            'from' => $this->from,
-            'targets' => $this->targets,
-        ];
-    }
-
-    public static function fromArray(array $data): self
-    {
-        if (! isset($data['resolver']) || $data['resolver'] === '') {
-            throw new \InvalidArgumentException(
-                "Cannot restore BranchEdge [{$data['from']}] from snapshot: 'resolver' is missing. ".
-                'Closure-based branch edges cannot be serialized or restored. Use a string expression resolver instead.'
-            );
-        }
-
-        return new self(
-            $data['from'],
-            $data['resolver'],
-            $data['targets'] ?? [],
-        );
     }
 }

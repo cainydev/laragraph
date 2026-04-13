@@ -20,7 +20,6 @@ use Throwable;
  * @property int|null $parent_run_id
  * @property string|null $parent_node_name
  * @property string|null $key
- * @property array|null $snapshot
  * @property array $state
  * @property RunStatus $status
  * @property string $current
@@ -38,7 +37,6 @@ class WorkflowRun extends Model
         'parent_run_id',
         'parent_node_name',
         'key',
-        'snapshot',
         'state',
         'status',
         'current',
@@ -48,7 +46,7 @@ class WorkflowRun extends Model
 
     protected $attributes = [
         'state' => '{}',
-        'status' => RunStatus::Pending->value,
+        'status' => RunStatus::Running->value,
         'current' => Workflow::START,
         'active_pointers' => '[]',
     ];
@@ -61,7 +59,9 @@ class WorkflowRun extends Model
      */
     public function pause(): self
     {
-        return Laragraph::pause($this->id);
+        Laragraph::pause($this->id);
+
+        return $this->refresh();
     }
 
     /**
@@ -72,7 +72,9 @@ class WorkflowRun extends Model
      */
     public function abort(): self
     {
-        return Laragraph::abort($this->id);
+        Laragraph::abort($this->id);
+
+        return $this->refresh();
     }
 
     /**
@@ -84,7 +86,9 @@ class WorkflowRun extends Model
      */
     public function resume(array $additionalState = []): self
     {
-        return Laragraph::resume($this->id, $additionalState);
+        Laragraph::resume($this->id, $additionalState);
+
+        return $this->refresh();
     }
 
     public function parent(): BelongsTo
@@ -114,7 +118,6 @@ class WorkflowRun extends Model
     protected function casts(): array
     {
         return [
-            'snapshot' => 'array',
             'state' => 'array',
             'status' => RunStatus::class,
             'active_pointers' => 'array',

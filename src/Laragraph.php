@@ -7,7 +7,6 @@ use Cainy\Laragraph\Builder\Workflow;
 use Cainy\Laragraph\Engine\Concerns\ManagesState;
 use Cainy\Laragraph\Engine\Concerns\TracksPointers;
 use Cainy\Laragraph\Engine\ExecuteNode;
-use Cainy\Laragraph\Engine\WorkflowRegistry;
 use Cainy\Laragraph\Enums\RunStatus;
 use Cainy\Laragraph\Events\WorkflowFailed;
 use Cainy\Laragraph\Events\WorkflowResumed;
@@ -18,39 +17,27 @@ use Cainy\Laragraph\Routing\Send;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
-use JsonException;
 use Throwable;
 
 readonly class Laragraph
 {
     use ManagesState, TracksPointers;
 
-    public function __construct(
-        private WorkflowRegistry $registry,
-    ) {}
-
     /**
-     * Register a workflow by name. The definition can be a class string or
-     * a callable that returns a Workflow/CompiledWorkflow instance.
-     */
-    public function register(string $name, string|callable $definition): void
-    {
-        $this->registry->register($name, $definition);
-    }
-
-    /**
-     * Start a new workflow run by name.
+     * Start a new workflow run.
      *
+     * @param  class-string<Workflow>  $workflowClass
      * @throws Throwable
      */
-    public function start(string $workflowName, array $initialState = [], ?string $key = null): WorkflowRun
+    public function run(string $workflowClass, array $initialState = []): WorkflowRun
     {
-        $workflow = $this->registry->resolve($workflowName);
-        $startTargets = $workflow->getStartNodes($initialState);
+        $workflow = app($workflowClass);
+        $compiled = $workflow->compile();
+        $startTargets = $compiled->getStartNodes($initialState);
 
-        $run = DB::transaction(function () use ($workflowName, $initialState, $key, $startTargets): WorkflowRun {
+        $run = DB::transaction(function () use ($workflowClass, $initialState, $startTargets): WorkflowRun {
             $run = WorkflowRun::create([
-                'key' => $key ?? $workflowName,
+                'key' => $workflowClass,
                 'state' => $initialState,
                 'status' => RunStatus::Running,
             ]);
@@ -61,92 +48,29 @@ readonly class Laragraph
             return $run;
         });
 
-        Event::dispatch(new WorkflowStarted($run->id, $workflowName));
+        Event::dispatch(new WorkflowStarted($run->id, $workflowClass));
 
-        $this->dispatchTargets($run->id, $startTargets);
-
-        return $run;
-    }
-
-    /**
-     * Push pointer entries for a mix of string node names and Send objects.
-     *
-     * @param  array<string|Send>  $targets
-     */
-    private function pushTargetPointers(WorkflowRun $run, array $targets): void
-    {
-        foreach ($targets as $target) {
-            if ($target instanceof Send) {
-                $this->pushPointers($run, $target->nodeName);
-            } elseif ($target !== Workflow::END) {
-                $this->pushPointers($run, $target);
-            }
-        }
-    }
-
-    /**
-     * Dispatch ExecuteNode for a mix of string node names and Send objects.
-     *
-     * @param  array<string|Send>  $targets
-     */
-    private function dispatchTargets(int $runId, array $targets): void
-    {
-        foreach ($targets as $target) {
-            if ($target instanceof Send) {
-                ExecuteNode::dispatch($runId, $target->nodeName, $target->payload);
-            } elseif ($target !== Workflow::END) {
-                ExecuteNode::dispatch($runId, $target);
-            }
-        }
-    }
-
-    /**
-     * Start a new workflow run by blueprint.
-     *
-     * @throws Throwable
-     */
-    public function startFromBlueprint(Workflow $blueprint, array $initialState = [], ?string $key = null): WorkflowRun
-    {
-        $snapshot = $blueprint->toJson();
-        $compiled = Workflow::fromJson($snapshot);
-        $startTargets = $compiled->getStartNodes($initialState);
-
-        $run = DB::transaction(function () use ($key, $snapshot, $initialState, $startTargets): WorkflowRun {
-            $run = WorkflowRun::create([
-                'key' => $key,
-                'snapshot' => json_decode($snapshot, true),
-                'state' => $initialState,
-                'status' => RunStatus::Running,
-            ]);
-
-            $this->pushTargetPointers($run, $startTargets);
-            $run->save();
-
-            return $run;
-        });
-
-        Event::dispatch(new WorkflowStarted($run->id, $key ?? 'blueprint'));
-
-        $this->dispatchTargets($run->id, $startTargets);
+        $this->dispatchTargets($run->id, $startTargets, $compiled);
 
         return $run;
     }
 
     /**
-     * Start a child workflow run from a compiled workflow instance, linking it to a parent.
+     * Start a child workflow run, linking it to a parent.
      *
      * @throws Throwable
      */
-    public function startChildWorkflow(CompiledWorkflow $compiled, array $initialState, int $parentRunId, string $parentNodeName, ?string $key = null): WorkflowRun
+    public function startChildWorkflow(Workflow $workflow, array $initialState, int $parentRunId, string $parentNodeName): WorkflowRun
     {
+        $workflowClass = get_class($workflow);
+        $compiled = $workflow->compile();
         $startTargets = $compiled->getStartNodes($initialState);
 
-        $run = DB::transaction(function () use ($compiled, $initialState, $startTargets, $parentRunId, $parentNodeName, $key): WorkflowRun {
+        $run = DB::transaction(function () use ($workflowClass, $initialState, $startTargets, $parentRunId, $parentNodeName): WorkflowRun {
             $run = WorkflowRun::create([
                 'parent_run_id' => $parentRunId,
                 'parent_node_name' => $parentNodeName,
-                'key' => $key,
-                'snapshot' => $compiled->toArray(),
+                'key' => $workflowClass,
                 'state' => $initialState,
                 'status' => RunStatus::Running,
             ]);
@@ -157,9 +81,9 @@ readonly class Laragraph
             return $run;
         });
 
-        Event::dispatch(new WorkflowStarted($run->id, $key ?? 'child'));
+        Event::dispatch(new WorkflowStarted($run->id, $workflowClass));
 
-        $this->dispatchTargets($run->id, $startTargets);
+        $this->dispatchTargets($run->id, $startTargets, $compiled);
 
         return $run;
     }
@@ -172,7 +96,9 @@ readonly class Laragraph
      */
     public function resumeFromChild(int $parentRunId, string $parentNodeName): void
     {
-        $resumed = DB::transaction(function () use ($parentRunId): bool {
+        $workflowKey = '';
+
+        $resumed = DB::transaction(function () use ($parentRunId, &$workflowKey): bool {
             /** @var WorkflowRun $run */
             $run = WorkflowRun::lockForUpdate()->findOrFail($parentRunId);
 
@@ -180,6 +106,7 @@ readonly class Laragraph
                 return false;
             }
 
+            $workflowKey = $run->key ?? '';
             $run->status = RunStatus::Running;
             $run->save();
 
@@ -190,9 +117,10 @@ readonly class Laragraph
             return;
         }
 
-        Event::dispatch(new WorkflowResumed($parentRunId));
+        Event::dispatch(new WorkflowResumed($parentRunId, $workflowKey));
 
-        ExecuteNode::dispatch($parentRunId, $parentNodeName);
+        $compiled = $workflowKey !== '' ? $this->hydrateWorkflowByKey($workflowKey) : null;
+        ExecuteNode::dispatchNode($parentRunId, $parentNodeName, null, $compiled);
     }
 
     /**
@@ -238,7 +166,7 @@ readonly class Laragraph
             return $run;
         });
 
-        Event::dispatch(new WorkflowFailed($runId, new \RuntimeException('Workflow aborted.')));
+        Event::dispatch(new WorkflowFailed($runId, new \RuntimeException('Workflow aborted.'), $run->key ?? ''));
 
         return $run;
     }
@@ -254,8 +182,9 @@ readonly class Laragraph
     public function resume(int $runId, array $additionalState = []): WorkflowRun
     {
         $pointers = [];
+        $workflowKey = '';
 
-        $run = DB::transaction(function () use ($runId, $additionalState, &$pointers): WorkflowRun {
+        $run = DB::transaction(function () use ($runId, $additionalState, &$pointers, &$workflowKey): WorkflowRun {
             /** @var WorkflowRun $run */
             $run = WorkflowRun::lockForUpdate()->findOrFail($runId);
 
@@ -264,11 +193,12 @@ readonly class Laragraph
             }
 
             if (! empty($additionalState)) {
-                $workflow = $this->hydrateWorkflow($run);
-                $reducer = $workflow->getReducer();
+                $compiled = $this->hydrateWorkflow($run);
+                $reducer = $compiled->getReducer();
                 $this->applyMutation($run, $additionalState, $reducer);
             }
 
+            $workflowKey = $run->key ?? '';
             $run->status = RunStatus::Running;
             $run->save();
 
@@ -277,30 +207,59 @@ readonly class Laragraph
             return $run;
         });
 
-        Event::dispatch(new WorkflowResumed($runId));
+        Event::dispatch(new WorkflowResumed($runId, $workflowKey));
 
+        $compiled = $workflowKey !== '' ? $this->hydrateWorkflowByKey($workflowKey) : null;
         foreach ($pointers as $nodeName) {
-            ExecuteNode::dispatch($runId, $nodeName);
+            ExecuteNode::dispatchNode($runId, $nodeName, null, $compiled);
         }
 
         return $run;
     }
 
-    /**
-     * @throws JsonException
-     */
     private function hydrateWorkflow(WorkflowRun $run): CompiledWorkflow
     {
-        if ($run->snapshot !== null) {
-            $json = json_encode($run->snapshot, JSON_THROW_ON_ERROR);
-
-            return Workflow::fromJson($json);
+        if ($run->key === null) {
+            throw new \RuntimeException("WorkflowRun [{$run->id}] has no workflow class key.");
         }
 
-        if ($run->key !== null) {
-            return $this->registry->resolve($run->key);
-        }
+        return $this->hydrateWorkflowByKey($run->key);
+    }
 
-        throw new \RuntimeException("WorkflowRun [{$run->id}] has neither a snapshot nor a registry key.");
+    private function hydrateWorkflowByKey(string $key): CompiledWorkflow
+    {
+        return app($key)->compile();
+    }
+
+    /**
+     * Push pointer entries for a mix of string node names and Send objects.
+     *
+     * @param  array<string|Send>  $targets
+     */
+    private function pushTargetPointers(WorkflowRun $run, array $targets): void
+    {
+        foreach ($targets as $target) {
+            if ($target instanceof Send) {
+                $this->pushPointers($run, $target->nodeName);
+            } elseif ($target !== Workflow::END) {
+                $this->pushPointers($run, $target);
+            }
+        }
+    }
+
+    /**
+     * Dispatch ExecuteNode for a mix of string node names and Send objects.
+     *
+     * @param  array<string|Send>  $targets
+     */
+    private function dispatchTargets(int $runId, array $targets, ?CompiledWorkflow $workflow = null): void
+    {
+        foreach ($targets as $target) {
+            if ($target instanceof Send) {
+                ExecuteNode::dispatchNode($runId, $target->nodeName, $target->payload, $workflow);
+            } elseif ($target !== Workflow::END) {
+                ExecuteNode::dispatchNode($runId, $target, null, $workflow);
+            }
+        }
     }
 }

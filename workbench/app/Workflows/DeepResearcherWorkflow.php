@@ -8,23 +8,21 @@ use Workbench\App\Nodes\DeepResearch\CompilerNode;
 use Workbench\App\Nodes\DeepResearch\PlannerNode;
 use Workbench\App\Nodes\DeepResearch\ResearchWorkerNode;
 
-class DeepResearcherWorkflow
+class DeepResearcherWorkflow extends Workflow
 {
-    public static function build(): Workflow
+    public function definition(): void
     {
-        return Workflow::create()
-            ->addNode('planner', PlannerNode::class)
+        $this->addNode('planner', PlannerNode::class)
             ->addNode('research-worker', ResearchWorkerNode::class)
-            ->addNode('compiler', CompilerNode::class)
-            ->transition(Workflow::START, 'planner')
-            // Send one research-worker job per query
+            ->addNode('compiler', CompilerNode::class);
+
+        $this->transition(Workflow::START, 'planner')
             ->branch('planner', function (array $state): array {
                 return array_map(
                     fn (string $query) => new Send('research-worker', ['search_query' => $query]),
                     $state['queries'] ?? [],
                 );
             }, targets: ['research-worker'])
-            // All workers converge on compiler (fan-in barrier handled inside CompilerNode)
             ->transition('research-worker', 'compiler')
             ->transition('compiler', Workflow::END);
     }

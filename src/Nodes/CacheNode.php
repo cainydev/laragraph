@@ -2,7 +2,7 @@
 
 namespace Cainy\Laragraph\Nodes;
 
-use Cainy\Laragraph\Contracts\SerializableNode;
+use Cainy\Laragraph\Contracts\Node;
 use Cainy\Laragraph\Engine\NodeExecutionContext;
 use Illuminate\Support\Facades\Cache;
 
@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Cache;
  * Cache read/write node.
  * The cacheKey supports {state.key} interpolation.
  */
-final class CacheNode implements SerializableNode
+final class CacheNode implements Node
 {
     public function __construct(
         public readonly string $operation,  // 'get', 'put', 'forget'
@@ -71,24 +71,4 @@ final class CacheNode implements SerializableNode
         }, $template) ?? $template;
     }
 
-    public function toArray(): array
-    {
-        return [
-            '__synthetic' => 'cache',
-            'operation' => $this->operation,
-            'cache_key' => $this->cacheKey,
-            'state_key' => $this->stateKey,
-            'ttl' => $this->ttl,
-        ];
-    }
-
-    public static function fromArray(array $data): static
-    {
-        return new self(
-            operation: $data['operation'],
-            cacheKey: $data['cache_key'],
-            stateKey: $data['state_key'],
-            ttl: $data['ttl'] ?? null,
-        );
-    }
 }

@@ -20,14 +20,3 @@ it('stores the reason in state mutation', function () {
         expect($e->stateMutation['gate_reason'])->toBe('Manager approval needed');
     }
 });
-
-it('serializes and deserializes correctly', function () {
-    $node = new GateNode('Review required');
-    $array = $node->toArray();
-
-    expect($array['__synthetic'])->toBe('gate');
-    expect($array['reason'])->toBe('Review required');
-
-    $restored = GateNode::fromArray($array);
-    expect($restored->reason)->toBe('Review required');
-});

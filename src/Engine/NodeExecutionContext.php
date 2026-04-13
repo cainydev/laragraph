@@ -18,6 +18,24 @@ readonly class NodeExecutionContext
         public int $pendingCount = 1,
     ) {}
 
+    /**
+     * Returns true when this node was dispatched via a Send object (fan-out execution).
+     * The isolated payload is available via payload().
+     */
+    public function isSendExecution(): bool
+    {
+        return $this->isolatedPayload !== null;
+    }
+
+    /**
+     * Retrieve a value from the isolated Send payload by key.
+     * Returns $default when the node was not dispatched via Send or the key is absent.
+     */
+    public function payload(string $key, mixed $default = null): mixed
+    {
+        return $this->isolatedPayload[$key] ?? $default;
+    }
+
     public static function fromJob(WorkflowRun $run, string $nodeName, int $attempt, int $maxAttempts, ?array $isolatedPayload = null): self
     {
         $pendingCount = count(array_filter(

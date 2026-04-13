@@ -7,17 +7,12 @@ use Cainy\Laragraph\Enums\RunStatus;
 use Cainy\Laragraph\Facades\Laragraph;
 use Cainy\Laragraph\Models\WorkflowRun;
 
-use function Cainy\Laragraph\Tests\registerTestWorkflow;
+use function Cainy\Laragraph\Tests\bindTestWorkflow;
 
 function makeFailingNodeInstance(): Node
 {
     return new class implements Node
     {
-        public function getName(): string
-        {
-            return 'failing-node';
-        }
-
         public function handle(NodeExecutionContext $context, array $state): array
         {
             throw new RuntimeException('Intentional failure');
@@ -26,13 +21,17 @@ function makeFailingNodeInstance(): Node
 }
 
 it('sets run status to Failed when a node throws', function () {
-    registerTestWorkflow('fail-test', Workflow::create()
-        ->addNode('boom', makeFailingNodeInstance())
-        ->transition(Workflow::START, 'boom')
-        ->transition('boom', Workflow::END));
+    $key = bindTestWorkflow('fail-test', new class extends Workflow {
+        public function definition(): void
+        {
+            $this->addNode('boom', makeFailingNodeInstance());
+            $this->transition(Workflow::START, 'boom');
+            $this->transition('boom', Workflow::END);
+        }
+    });
 
     try {
-        Laragraph::start('fail-test');
+        Laragraph::run($key);
     } catch (Throwable) {
         // Sync queue propagates the exception
     }
@@ -42,13 +41,17 @@ it('sets run status to Failed when a node throws', function () {
 });
 
 it('records error details in state on failure', function () {
-    registerTestWorkflow('fail-error-test', Workflow::create()
-        ->addNode('boom', makeFailingNodeInstance())
-        ->transition(Workflow::START, 'boom')
-        ->transition('boom', Workflow::END));
+    $key = bindTestWorkflow('fail-error-test', new class extends Workflow {
+        public function definition(): void
+        {
+            $this->addNode('boom', makeFailingNodeInstance());
+            $this->transition(Workflow::START, 'boom');
+            $this->transition('boom', Workflow::END);
+        }
+    });
 
     try {
-        Laragraph::start('fail-error-test');
+        Laragraph::run($key);
     } catch (Throwable) {
         // expected
     }
@@ -60,13 +63,17 @@ it('records error details in state on failure', function () {
 });
 
 it('rejects resuming a failed workflow', function () {
-    registerTestWorkflow('fail-resume-test', Workflow::create()
-        ->addNode('boom', makeFailingNodeInstance())
-        ->transition(Workflow::START, 'boom')
-        ->transition('boom', Workflow::END));
+    $key = bindTestWorkflow('fail-resume-test', new class extends Workflow {
+        public function definition(): void
+        {
+            $this->addNode('boom', makeFailingNodeInstance());
+            $this->transition(Workflow::START, 'boom');
+            $this->transition('boom', Workflow::END);
+        }
+    });
 
     try {
-        Laragraph::start('fail-resume-test');
+        Laragraph::run($key);
     } catch (Throwable) {
         // expected
     }

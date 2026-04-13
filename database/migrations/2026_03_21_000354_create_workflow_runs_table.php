@@ -13,7 +13,6 @@ return new class extends Migration
             $table->foreignId('parent_run_id')->nullable()->constrained('workflow_runs')->nullOnDelete();
             $table->string('parent_node_name')->nullable();
             $table->string('key')->nullable();
-            $table->json('snapshot')->nullable();
             $table->json('state');
             $table->string('status');
             $table->string('current');

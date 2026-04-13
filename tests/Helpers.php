@@ -4,16 +4,18 @@ namespace Cainy\Laragraph\Tests;
 
 use Cainy\Laragraph\Builder\Workflow;
 use Cainy\Laragraph\Engine\NodeExecutionContext;
-use Cainy\Laragraph\Engine\WorkflowRegistry;
 
 /**
- * Register a workflow builder for testing and return the key.
+ * Bind a Workflow instance to the container under a stable test key and return
+ * the key so it can be passed to Laragraph::run().
+ *
+ * @return class-string<Workflow>
  */
-function registerTestWorkflow(string $name, Workflow $workflow): string
+function bindTestWorkflow(string $key, Workflow $workflow): string
 {
-    app(WorkflowRegistry::class)->register($name, fn () => $workflow);
+    app()->bind($key, fn () => $workflow);
 
-    return $name;
+    return $key; // @phpstan-ignore-line
 }
 
 /**

@@ -2,14 +2,14 @@
 
 namespace Cainy\Laragraph\Nodes;
 
-use Cainy\Laragraph\Contracts\SerializableNode;
+use Cainy\Laragraph\Contracts\Node;
 use Cainy\Laragraph\Engine\NodeExecutionContext;
 use Illuminate\Support\Facades\Event;
 
 /**
  * Event dispatch node — fires a Laravel event with data from state.
  */
-final class NotifyNode implements SerializableNode
+final class NotifyNode implements Node
 {
     /**
      * @param  string  $eventClass  Fully-qualified class name of the event to dispatch.
@@ -28,20 +28,4 @@ final class NotifyNode implements SerializableNode
         return [];
     }
 
-    public function toArray(): array
-    {
-        return [
-            '__synthetic' => 'notify',
-            'event_class' => $this->eventClass,
-            'data_keys' => $this->dataKeys,
-        ];
-    }
-
-    public static function fromArray(array $data): static
-    {
-        return new self(
-            eventClass: $data['event_class'],
-            dataKeys: $data['data_keys'] ?? [],
-        );
-    }
 }

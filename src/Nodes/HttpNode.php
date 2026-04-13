@@ -2,7 +2,7 @@
 
 namespace Cainy\Laragraph\Nodes;
 
-use Cainy\Laragraph\Contracts\SerializableNode;
+use Cainy\Laragraph\Contracts\Node;
 use Cainy\Laragraph\Engine\NodeExecutionContext;
 use Illuminate\Support\Facades\Http;
 
@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Http;
  * HTTP request node — makes an HTTP call and stores the response in state.
  * URL and body key values support {state.key} interpolation.
  */
-final class HttpNode implements SerializableNode
+final class HttpNode implements Node
 {
     public function __construct(
         public readonly string $url,
@@ -65,26 +65,4 @@ final class HttpNode implements SerializableNode
         }, $template) ?? $template;
     }
 
-    public function toArray(): array
-    {
-        return [
-            '__synthetic' => 'http',
-            'url' => $this->url,
-            'method' => $this->method,
-            'headers' => $this->headers,
-            'body_key' => $this->bodyKey,
-            'response_key' => $this->responseKey,
-        ];
-    }
-
-    public static function fromArray(array $data): static
-    {
-        return new self(
-            url: $data['url'],
-            method: $data['method'] ?? 'GET',
-            headers: $data['headers'] ?? [],
-            bodyKey: $data['body_key'] ?? null,
-            responseKey: $data['response_key'] ?? 'response',
-        );
-    }
 }

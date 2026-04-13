@@ -5,16 +5,20 @@ use Cainy\Laragraph\Enums\RunStatus;
 use Cainy\Laragraph\Facades\Laragraph;
 use Cainy\Laragraph\Nodes\FormatNode;
 
-use function Cainy\Laragraph\Tests\registerTestWorkflow;
+use function Cainy\Laragraph\Tests\bindTestWorkflow;
 
 it('interrupt_before pauses before the node runs', function () {
-    registerTestWorkflow('ib-pause', Workflow::create()
-        ->addNode('guarded', new FormatNode(fn () => ['executed' => true]))
-        ->transition(Workflow::START, 'guarded')
-        ->transition('guarded', Workflow::END)
-        ->interruptBefore('guarded'));
+    $key = bindTestWorkflow('ib-pause', new class extends Workflow {
+        public function definition(): void
+        {
+            $this->addNode('guarded', new FormatNode(fn () => ['executed' => true]));
+            $this->transition(Workflow::START, 'guarded');
+            $this->transition('guarded', Workflow::END);
+            $this->interruptBefore('guarded');
+        }
+    });
 
-    $run = Laragraph::start('ib-pause');
+    $run = Laragraph::run($key);
 
     $fresh = $run->fresh();
     expect($fresh->status)->toBe(RunStatus::Paused);
@@ -22,13 +26,17 @@ it('interrupt_before pauses before the node runs', function () {
 });
 
 it('interrupt_before resumes and executes the node', function () {
-    registerTestWorkflow('ib-resume', Workflow::create()
-        ->addNode('guarded', new FormatNode(fn (array $s) => ['result' => $s['input'] ?? 'default']))
-        ->transition(Workflow::START, 'guarded')
-        ->transition('guarded', Workflow::END)
-        ->interruptBefore('guarded'));
+    $key = bindTestWorkflow('ib-resume', new class extends Workflow {
+        public function definition(): void
+        {
+            $this->addNode('guarded', new FormatNode(fn (array $s) => ['result' => $s['input'] ?? 'default']));
+            $this->transition(Workflow::START, 'guarded');
+            $this->transition('guarded', Workflow::END);
+            $this->interruptBefore('guarded');
+        }
+    });
 
-    $run = Laragraph::start('ib-resume');
+    $run = Laragraph::run($key);
     expect($run->fresh()->status)->toBe(RunStatus::Paused);
 
     Laragraph::resume($run->id, ['input' => 'human-value']);
@@ -39,15 +47,19 @@ it('interrupt_before resumes and executes the node', function () {
 });
 
 it('interrupt_after pauses after the node runs', function () {
-    registerTestWorkflow('ia-pause', Workflow::create()
-        ->addNode('producer', new FormatNode(fn () => ['draft' => 'Hello world']))
-        ->addNode('consumer', new FormatNode(fn (array $s) => ['consumed' => $s['draft']]))
-        ->transition(Workflow::START, 'producer')
-        ->transition('producer', 'consumer')
-        ->transition('consumer', Workflow::END)
-        ->interruptAfter('producer'));
+    $key = bindTestWorkflow('ia-pause', new class extends Workflow {
+        public function definition(): void
+        {
+            $this->addNode('producer', new FormatNode(fn () => ['draft' => 'Hello world']));
+            $this->addNode('consumer', new FormatNode(fn (array $s) => ['consumed' => $s['draft']]));
+            $this->transition(Workflow::START, 'producer');
+            $this->transition('producer', 'consumer');
+            $this->transition('consumer', Workflow::END);
+            $this->interruptAfter('producer');
+        }
+    });
 
-    $run = Laragraph::start('ia-pause');
+    $run = Laragraph::run($key);
 
     $fresh = $run->fresh();
     expect($fresh->status)->toBe(RunStatus::Paused);
@@ -56,15 +68,19 @@ it('interrupt_after pauses after the node runs', function () {
 });
 
 it('interrupt_after resumes and continues to next node', function () {
-    registerTestWorkflow('ia-resume', Workflow::create()
-        ->addNode('producer', new FormatNode(fn () => ['draft' => 'original']))
-        ->addNode('consumer', new FormatNode(fn (array $s) => ['final' => $s['approved_draft'] ?? $s['draft']]))
-        ->transition(Workflow::START, 'producer')
-        ->transition('producer', 'consumer')
-        ->transition('consumer', Workflow::END)
-        ->interruptAfter('producer'));
+    $key = bindTestWorkflow('ia-resume', new class extends Workflow {
+        public function definition(): void
+        {
+            $this->addNode('producer', new FormatNode(fn () => ['draft' => 'original']));
+            $this->addNode('consumer', new FormatNode(fn (array $s) => ['final' => $s['approved_draft'] ?? $s['draft']]));
+            $this->transition(Workflow::START, 'producer');
+            $this->transition('producer', 'consumer');
+            $this->transition('consumer', Workflow::END);
+            $this->interruptAfter('producer');
+        }
+    });
 
-    $run = Laragraph::start('ia-resume');
+    $run = Laragraph::run($key);
     expect($run->fresh()->status)->toBe(RunStatus::Paused);
 
     Laragraph::resume($run->id, ['approved_draft' => 'revised']);
@@ -80,23 +96,31 @@ it('interrupt_after works in a loop with repeated pauses', function () {
         public int $calls = 0;
     };
 
-    registerTestWorkflow('ia-loop', Workflow::create()
-        ->addNode('drafter', new FormatNode(function (array $state) use ($counter) {
-            $counter->calls++;
+    $key = bindTestWorkflow('ia-loop', new class ($counter) extends Workflow {
+        public function __construct(private readonly object $counter) {}
 
-            return ['draft' => "draft v{$counter->calls}", 'draft_num' => $counter->calls];
-        }))
-        ->addNode('router', new FormatNode(fn () => []))
-        ->addNode('publish', new FormatNode(fn (array $s) => ['published' => $s['draft']]))
-        ->transition(Workflow::START, 'drafter')
-        ->transition('drafter', 'router')
-        ->branch('router', function (array $state): string {
-            return ($state['approve'] ?? false) ? 'publish' : 'drafter';
-        }, targets: ['publish', 'drafter'])
-        ->transition('publish', Workflow::END)
-        ->interruptAfter('drafter'));
+        public function definition(): void
+        {
+            $counter = $this->counter;
 
-    $run = Laragraph::start('ia-loop');
+            $this->addNode('drafter', new FormatNode(function (array $state) use ($counter) {
+                $counter->calls++;
+
+                return ['draft' => "draft v{$counter->calls}", 'draft_num' => $counter->calls];
+            }));
+            $this->addNode('router', new FormatNode(fn () => []));
+            $this->addNode('publish', new FormatNode(fn (array $s) => ['published' => $s['draft']]));
+            $this->transition(Workflow::START, 'drafter');
+            $this->transition('drafter', 'router');
+            $this->branch('router', function (array $state): string {
+                return ($state['approve'] ?? false) ? 'publish' : 'drafter';
+            }, targets: ['publish', 'drafter']);
+            $this->transition('publish', Workflow::END);
+            $this->interruptAfter('drafter');
+        }
+    });
+
+    $run = Laragraph::run($key);
     expect($run->fresh()->status)->toBe(RunStatus::Paused);
     expect($run->fresh()->state['draft'])->toBe('draft v1');
 
@@ -112,16 +136,20 @@ it('interrupt_after works in a loop with repeated pauses', function () {
 });
 
 it('interrupt_before and interrupt_after can coexist', function () {
-    registerTestWorkflow('ib-ia-combo', Workflow::create()
-        ->addNode('prepare', new FormatNode(fn (array $s) => ['prepared' => $s['config'] ?? 'default']))
-        ->addNode('execute', new FormatNode(fn (array $s) => ['result' => "ran with {$s['prepared']}"]))
-        ->transition(Workflow::START, 'prepare')
-        ->transition('prepare', 'execute')
-        ->transition('execute', Workflow::END)
-        ->interruptBefore('prepare')
-        ->interruptAfter('execute'));
+    $key = bindTestWorkflow('ib-ia-combo', new class extends Workflow {
+        public function definition(): void
+        {
+            $this->addNode('prepare', new FormatNode(fn (array $s) => ['prepared' => $s['config'] ?? 'default']));
+            $this->addNode('execute', new FormatNode(fn (array $s) => ['result' => "ran with {$s['prepared']}"]));
+            $this->transition(Workflow::START, 'prepare');
+            $this->transition('prepare', 'execute');
+            $this->transition('execute', Workflow::END);
+            $this->interruptBefore('prepare');
+            $this->interruptAfter('execute');
+        }
+    });
 
-    $run = Laragraph::start('ib-ia-combo');
+    $run = Laragraph::run($key);
     expect($run->fresh()->status)->toBe(RunStatus::Paused);
     expect($run->fresh()->state)->not->toHaveKey('prepared');
 

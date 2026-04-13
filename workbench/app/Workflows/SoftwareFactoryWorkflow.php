@@ -7,15 +7,15 @@ use Workbench\App\Nodes\SoftwareFactory\CoderNode;
 use Workbench\App\Nodes\SoftwareFactory\ReviewerNode;
 use Workbench\App\Nodes\SoftwareFactory\SupervisorNode;
 
-class SoftwareFactoryWorkflow
+class SoftwareFactoryWorkflow extends Workflow
 {
-    public static function build(): Workflow
+    public function definition(): void
     {
-        return Workflow::create()
-            ->addNode('supervisor', SupervisorNode::class)
+        $this->addNode('supervisor', SupervisorNode::class)
             ->addNode('coder', CoderNode::class)
-            ->addNode('reviewer', ReviewerNode::class)
-            ->transition(Workflow::START, 'supervisor')
+            ->addNode('reviewer', ReviewerNode::class);
+
+        $this->transition(Workflow::START, 'supervisor')
             ->branch('supervisor', function (array $state): string {
                 $decision = $state['decision'] ?? '';
 

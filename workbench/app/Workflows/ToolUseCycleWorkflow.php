@@ -6,14 +6,14 @@ use Cainy\Laragraph\Builder\Workflow;
 use Workbench\App\Nodes\DemoAgentNode;
 use Workbench\App\Nodes\SummarizeNode;
 
-class ToolUseCycleWorkflow
+class ToolUseCycleWorkflow extends Workflow
 {
-    public static function build(): Workflow
+    public function definition(): void
     {
-        return Workflow::create()
-            ->addNode('agent', new DemoAgentNode)
-            ->addNode('summarize', SummarizeNode::class)
-            ->transition(Workflow::START, 'agent')
+        $this->addNode('agent', new DemoAgentNode)
+            ->addNode('summarize', SummarizeNode::class);
+
+        $this->transition(Workflow::START, 'agent')
             ->transition('agent', 'summarize')
             ->transition('summarize', Workflow::END);
     }

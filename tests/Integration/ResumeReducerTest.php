@@ -5,36 +5,41 @@ use Cainy\Laragraph\Enums\RunStatus;
 use Cainy\Laragraph\Facades\Laragraph;
 use Cainy\Laragraph\Nodes\FormatNode;
 
-use function Cainy\Laragraph\Tests\registerTestWorkflow;
+use function Cainy\Laragraph\Tests\bindTestWorkflow;
 
 it('appends to a list key when resuming with additional state via SmartReducer', function () {
-    // SmartReducer appends lists — array_merge would overwrite, exposing the bug
-    registerTestWorkflow('reducer-resume-test', Workflow::create()
-        ->addNode('read', new FormatNode(fn (array $state) => ['saw' => $state['items'] ?? []]))
-        ->transition(Workflow::START, 'read')
-        ->transition('read', Workflow::END)
-        ->interruptBefore('read'));
+    $key = bindTestWorkflow('reducer-resume-test', new class extends Workflow {
+        public function definition(): void
+        {
+            $this->addNode('read', new FormatNode(fn (array $state) => ['saw' => $state['items'] ?? []]));
+            $this->transition(Workflow::START, 'read');
+            $this->transition('read', Workflow::END);
+            $this->interruptBefore('read');
+        }
+    });
 
-    $run = Laragraph::start('reducer-resume-test', ['items' => ['a', 'b']]);
+    $run = Laragraph::run($key, ['items' => ['a', 'b']]);
     expect($run->fresh()->status)->toBe(RunStatus::Paused);
 
-    // Resume with additional items — SmartReducer should append, not overwrite
     Laragraph::resume($run->id, ['items' => ['c']]);
 
     $fresh = $run->fresh();
     expect($fresh->status)->toBe(RunStatus::Completed);
-    // SmartReducer appends: original ['a','b'] + resumed ['c'] = ['a','b','c']
     expect($fresh->state['saw'])->toBe(['a', 'b', 'c']);
 });
 
 it('overwrites scalar keys when resuming with additional state', function () {
-    registerTestWorkflow('scalar-resume-test', Workflow::create()
-        ->addNode('check', new FormatNode(fn (array $state) => ['name' => $state['name'] ?? 'none']))
-        ->transition(Workflow::START, 'check')
-        ->transition('check', Workflow::END)
-        ->interruptBefore('check'));
+    $key = bindTestWorkflow('scalar-resume-test', new class extends Workflow {
+        public function definition(): void
+        {
+            $this->addNode('check', new FormatNode(fn (array $state) => ['name' => $state['name'] ?? 'none']));
+            $this->transition(Workflow::START, 'check');
+            $this->transition('check', Workflow::END);
+            $this->interruptBefore('check');
+        }
+    });
 
-    $run = Laragraph::start('scalar-resume-test', ['name' => 'original']);
+    $run = Laragraph::run($key, ['name' => 'original']);
     expect($run->fresh()->status)->toBe(RunStatus::Paused);
 
     Laragraph::resume($run->id, ['name' => 'updated']);
@@ -45,16 +50,20 @@ it('overwrites scalar keys when resuming with additional state', function () {
 });
 
 it('preserves existing state keys not present in additional state', function () {
-    registerTestWorkflow('preserve-resume-test', Workflow::create()
-        ->addNode('check', new FormatNode(fn (array $state) => [
-            'original' => $state['original'] ?? null,
-            'extra' => $state['extra'] ?? null,
-        ]))
-        ->transition(Workflow::START, 'check')
-        ->transition('check', Workflow::END)
-        ->interruptBefore('check'));
+    $key = bindTestWorkflow('preserve-resume-test', new class extends Workflow {
+        public function definition(): void
+        {
+            $this->addNode('check', new FormatNode(fn (array $state) => [
+                'original' => $state['original'] ?? null,
+                'extra' => $state['extra'] ?? null,
+            ]));
+            $this->transition(Workflow::START, 'check');
+            $this->transition('check', Workflow::END);
+            $this->interruptBefore('check');
+        }
+    });
 
-    $run = Laragraph::start('preserve-resume-test', ['original' => 'keep_me']);
+    $run = Laragraph::run($key, ['original' => 'keep_me']);
     expect($run->fresh()->status)->toBe(RunStatus::Paused);
 
     Laragraph::resume($run->id, ['extra' => 'injected']);

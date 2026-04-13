@@ -87,8 +87,13 @@ class PrismNode implements HasLoop, Node
         );
     }
 
-    public function loopCondition(): string|\Closure
+    public function loopCondition(): \Closure
     {
-        return 'not_empty(last(state["messages"])["tool_calls"] ?? [])';
+        return function (array $state): bool {
+            $messages = $state['messages'] ?? [];
+            $last = ! empty($messages) ? end($messages) : null;
+
+            return ! empty($last['tool_calls'] ?? []);
+        };
     }
 }

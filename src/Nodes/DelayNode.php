@@ -2,7 +2,7 @@
 
 namespace Cainy\Laragraph\Nodes;
 
-use Cainy\Laragraph\Contracts\SerializableNode;
+use Cainy\Laragraph\Contracts\Node;
 use Cainy\Laragraph\Engine\NodeExecutionContext;
 use Cainy\Laragraph\Exceptions\NodePausedException;
 
@@ -12,7 +12,7 @@ use Cainy\Laragraph\Exceptions\NodePausedException;
  * On first execution it stores a resume-after timestamp in state and pauses.
  * On resume it checks if enough time has passed; if not it pauses again.
  */
-final class DelayNode implements SerializableNode
+final class DelayNode implements Node
 {
     public function __construct(
         public readonly int $seconds = 60,
@@ -41,18 +41,4 @@ final class DelayNode implements SerializableNode
         return [$resumeKey => null];
     }
 
-    public function toArray(): array
-    {
-        return [
-            '__synthetic' => 'delay',
-            'seconds' => $this->seconds,
-        ];
-    }
-
-    public static function fromArray(array $data): static
-    {
-        return new self(
-            seconds: $data['seconds'] ?? 60,
-        );
-    }
 }

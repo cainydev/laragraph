@@ -3,12 +3,12 @@
 namespace Cainy\Laragraph\Integrations\Prism;
 
 use Cainy\Laragraph\Contracts\HasName;
-use Cainy\Laragraph\Contracts\SerializableNode;
+use Cainy\Laragraph\Contracts\Node;
 use Cainy\Laragraph\Engine\NodeExecutionContext;
 use Prism\Prism\Tool;
 use Prism\Prism\ValueObjects\ToolError;
 
-final class ToolExecutor implements HasName, SerializableNode
+final class ToolExecutor implements HasName, Node
 {
     public function __construct(
         private readonly string $parentNodeName,
@@ -77,29 +77,6 @@ final class ToolExecutor implements HasName, SerializableNode
                 'tool_results' => $toolResults,
             ]],
         ];
-    }
-
-    /**
-     * @return array{__synthetic: string, parent_node_name: string, parent_node_class: string}
-     */
-    public function toArray(): array
-    {
-        return [
-            '__synthetic' => 'tool_executor',
-            'parent_node_name' => $this->parentNodeName,
-            'parent_node_class' => $this->parentNodeClass,
-        ];
-    }
-
-    /**
-     * @param  array{parent_node_name: string, parent_node_class: string}  $data
-     */
-    public static function fromArray(array $data): static
-    {
-        return new self(
-            parentNodeName: $data['parent_node_name'],
-            parentNodeClass: $data['parent_node_class'],
-        );
     }
 
     public function getParentNodeName(): string

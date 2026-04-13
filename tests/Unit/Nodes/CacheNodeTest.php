@@ -1,6 +1,5 @@
 <?php
 
-use Cainy\Laragraph\Builder\Workflow;
 use Cainy\Laragraph\Nodes\CacheNode;
 use Illuminate\Support\Facades\Cache;
 
@@ -63,45 +62,4 @@ it('throws for unknown operation', function () {
     $node = new CacheNode(operation: 'invalid', cacheKey: 'k', stateKey: 's');
 
     expect(fn () => $node->handle(makeContext(), []))->toThrow(InvalidArgumentException::class);
-});
-
-it('serializes to array', function () {
-    $node = new CacheNode('put', 'cache_key', 'state_key', 300);
-
-    expect($node->toArray())->toBe([
-        '__synthetic' => 'cache',
-        'operation' => 'put',
-        'cache_key' => 'cache_key',
-        'state_key' => 'state_key',
-        'ttl' => 300,
-    ]);
-});
-
-it('deserializes from array', function () {
-    $node = CacheNode::fromArray([
-        '__synthetic' => 'cache',
-        'operation' => 'get',
-        'cache_key' => 'k',
-        'state_key' => 's',
-        'ttl' => null,
-    ]);
-
-    expect($node->operation)->toBe('get');
-    expect($node->cacheKey)->toBe('k');
-    expect($node->ttl)->toBeNull();
-});
-
-it('round-trips via Workflow::fromJson()', function () {
-    $workflow = Workflow::create()
-        ->addNode('read', new CacheNode('get', 'profile:{state.id}', 'profile'))
-        ->transition(Workflow::START, 'read')
-        ->transition('read', Workflow::END);
-
-    $compiled = Workflow::fromJson($workflow->toJson());
-
-    $node = $compiled->resolveNode('read');
-    expect($node)->toBeInstanceOf(CacheNode::class);
-    expect($node->operation)->toBe('get');
-    expect($node->cacheKey)->toBe('profile:{state.id}');
-    expect($node->stateKey)->toBe('profile');
 });

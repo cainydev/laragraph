@@ -23,9 +23,7 @@
   - [Parallel Branches](#parallel-branches)
   - [Dynamic Fan-out with Send](#dynamic-fan-out-with-send)
 - [Running a Workflow](#running-a-workflow)
-  - [Registering Workflows](#registering-workflows)
   - [Starting a Run](#starting-a-run)
-  - [Starting from a Blueprint](#starting-from-a-blueprint)
   - [Controlling a Run](#controlling-a-run)
 - [State](#state)
   - [Reducers](#reducers)
@@ -39,8 +37,9 @@
   - [HasName](#hasname)
   - [HasTags](#hastags)
   - [HasRetryPolicy](#hasretrypolicy)
+  - [HasQueue](#hasqueue)
+  - [HasMiddleware](#hasmiddleware)
   - [HasLoop](#hasloop)
-  - [SerializableNode](#serializablenode)
 - [Built-in Nodes](#built-in-nodes)
   - [GateNode](#gatenode)
   - [SendNode](#sendnode)
@@ -60,7 +59,6 @@
   - [Tool-Using Agents](#tool-using-agents)
 - [Sub-graph Workflows](#sub-graph-workflows)
 - [Recursion Limit](#recursion-limit)
-- [Serializable Workflows](#serializable-workflows)
 - [Events](#events)
 - [Configuration](#configuration)
 - [Testing](#testing)
@@ -106,6 +104,28 @@ Execution is fully queue-driven. Each node runs as an independent `ExecuteNode` 
 
 ## Building a Workflow
 
+Workflows are classes that extend `Workflow` and define their graph in a `definition()` method:
+
+```php
+use Cainy\Laragraph\Builder\Workflow;
+
+class MyPipeline extends Workflow
+{
+    public function definition(): void
+    {
+        $this->addNode('fetch',     FetchNode::class)
+             ->addNode('transform', TransformNode::class)
+             ->addNode('store',     StoreNode::class)
+             ->transition(Workflow::START, 'fetch')
+             ->transition('fetch',     'transform')
+             ->transition('transform', 'store')
+             ->transition('store',     Workflow::END);
+    }
+}
+```
+
+You can also call `compile()` directly on a `Workflow` instance if you prefer building inline, but the class-based approach is recommended since workflows are stored by class name.
+
 ### Nodes
 
 A node is any class implementing `Cainy\Laragraph\Contracts\Node`:
@@ -131,29 +151,24 @@ class SummarizeNode implements Node
 
 ```php
 $context->runId           // int    — ID of the WorkflowRun
-$context->workflowKey     // string — registered name or key of the workflow
+$context->workflowKey     // string — class name of the workflow
 $context->nodeName        // string — name of this node in the graph
 $context->attempt         // int    — current queue attempt (1-based)
 $context->maxAttempts     // int    — maximum attempts configured
 $context->createdAt       // DateTimeImmutable
 $context->isolatedPayload // ?array — payload injected by a Send (see Dynamic Fan-out)
+
+// Helpers for Send-dispatched nodes:
+$context->isSendExecution()        // bool   — true when dispatched via a Send
+$context->payload('key', $default) // mixed  — read a value from the isolated payload
 ```
 
 ### Transitions
 
-Build a workflow with the fluent `Workflow` builder:
-
 ```php
-use Cainy\Laragraph\Builder\Workflow;
-
-$workflow = Workflow::create()
-    ->addNode('fetch',     FetchNode::class)
-    ->addNode('transform', TransformNode::class)
-    ->addNode('store',     StoreNode::class)
-    ->transition(Workflow::START, 'fetch')
-    ->transition('fetch',     'transform')
-    ->transition('transform', 'store')
-    ->transition('store',     Workflow::END);
+$this->transition(Workflow::START, 'fetch')
+     ->transition('fetch', 'transform')
+     ->transition('transform', Workflow::END);
 ```
 
 `Workflow::START` and `Workflow::END` are reserved entry and exit pseudo-nodes.
@@ -162,35 +177,12 @@ Nodes can be registered as class strings (resolved via the container) or as pre-
 
 ### Conditional Edges
 
-Pass a condition as the third argument to `->transition()`. It can be a **Closure** or a **Symfony Expression Language string**:
+Pass a Closure as the third argument to `->transition()`:
 
 ```php
-// Closure
 ->transition('classify', 'approve', fn(array $state) => $state['score'] > 50)
 ->transition('classify', 'reject',  fn(array $state) => $state['score'] <= 50)
-
-// Expression string (serializable — required for snapshot workflows)
-->transition('classify', 'approve', "state['score'] > 50")
-->transition('classify', 'reject',  "state['score'] <= 50")
 ```
-
-The expression receives the full state under the `state` variable.
-
-**Built-in expression functions:**
-
-| Function | Description |
-|---|---|
-| `last(array)` | Last element of an array, or `null` if empty. |
-| `first(array)` | First element of an array, or `null` if empty. |
-| `count(array)` | Number of elements. |
-| `empty(value)` | `true` if null, `[]`, `""`, or `false`. |
-| `not_empty(value)` | Negation of `empty`. |
-| `get(array, path, default)` | Dot-notation safe access: `get(state, "meta.score", 0)`. |
-| `has_value(array, value)` | `true` if value exists in array. |
-| `keys(array)` | Array keys. |
-| `sum(array)` | Sum of numeric values. |
-| `join(array, sep)` | Implode array with separator. |
-| `send(node, items, key)` | Returns a `Send[]` array for dynamic fan-out (see below). |
 
 ### Branch Edges
 
@@ -204,35 +196,28 @@ A `branch` edge uses a resolver to return one or more target node names dynamica
 
 The `targets` array is optional but recommended — it enables graph visualization without executing the resolver.
 
-For serializable workflows, use an expression string as the resolver:
-
-```php
-->branch('router', "state['approved'] ? 'publish' : 'revise'", targets: ['publish', 'revise'])
-```
-
 ### Parallel Branches
 
 To execute multiple nodes in parallel from a single node, add multiple transitions from the same source:
 
 ```php
-Workflow::create()
-    ->addNode('split',    SplitNode::class)
-    ->addNode('branch-a', BranchANode::class)
-    ->addNode('branch-b', BranchBNode::class)
-    ->addNode('merge',    MergeNode::class)
-    ->transition(Workflow::START, 'split')
-    ->transition('split', 'branch-a')
-    ->transition('split', 'branch-b')
-    ->transition('branch-a', 'merge')
-    ->transition('branch-b', 'merge')
-    ->transition('merge', Workflow::END);
+$this->addNode('split',    SplitNode::class)
+     ->addNode('branch-a', BranchANode::class)
+     ->addNode('branch-b', BranchBNode::class)
+     ->addNode('merge',    MergeNode::class)
+     ->transition(Workflow::START, 'split')
+     ->transition('split', 'branch-a')
+     ->transition('split', 'branch-b')
+     ->transition('branch-a', 'merge')
+     ->transition('branch-b', 'merge')
+     ->transition('merge', Workflow::END);
 ```
 
-`branch-a` and `branch-b` run as independent queue jobs. Fan-in barrier logic (waiting for all branches before proceeding) can be handled with the built-in `ReduceNode` or in your own node by inspecting state.
+`branch-a` and `branch-b` run as independent queue jobs. Fan-in barrier logic can be handled with the built-in `ReduceNode` or in your own node by inspecting state.
 
 ### Dynamic Fan-out with Send
 
-To fan out over a dynamic list — where the number of parallel branches isn't known until runtime — return `Send` objects from a branch edge resolver:
+To fan out over a dynamic list, return `Send` objects from a branch edge resolver:
 
 ```php
 use Cainy\Laragraph\Routing\Send;
@@ -245,53 +230,28 @@ use Cainy\Laragraph\Routing\Send;
 }, targets: ['worker'])
 ```
 
-Each `Send` dispatches an independent `ExecuteNode` job. The target node receives the payload via `$context->isolatedPayload`.
-
-The same thing is available as the `SendNode` prebuilt (see [Built-in Nodes](#built-in-nodes)) or via the `send()` expression function:
+Each `Send` dispatches an independent `ExecuteNode` job. The target node receives the payload via `$context->isolatedPayload` or the helper methods:
 
 ```php
-// Branch edge expression string
-->branch('planner', "send('worker', state['queries'], 'query')", targets: ['worker'])
+public function handle(NodeExecutionContext $context, array $state): array
+{
+    $query = $context->payload('query');
+    // ...
+}
 ```
+
+The same fan-out is available via the `SendNode` prebuilt (see [Built-in Nodes](#built-in-nodes)).
 
 ---
 
 ## Running a Workflow
-
-### Registering Workflows
-
-Register workflows in your `AppServiceProvider` or a dedicated provider:
-
-```php
-use Cainy\Laragraph\Facades\Laragraph;
-
-public function boot(): void
-{
-    Laragraph::register('my-pipeline', MyPipelineWorkflow::class);
-}
-```
-
-Or register them via the config file:
-
-```php
-// config/laragraph.php
-'workflows' => [
-    'my-pipeline' => MyPipelineWorkflow::class,
-],
-```
-
-Both forms resolve the class via the container and call its `build()` method automatically. A callable is also accepted if you need to pass arguments:
-
-```php
-Laragraph::register('my-pipeline', fn() => MyPipelineWorkflow::build(someOption: true));
-```
 
 ### Starting a Run
 
 ```php
 use Cainy\Laragraph\Facades\Laragraph;
 
-$run = Laragraph::start('my-pipeline', initialState: [
+$run = Laragraph::run(MyPipeline::class, initialState: [
     'input' => 'Hello, world!',
 ]);
 
@@ -300,23 +260,6 @@ echo $run->status; // RunStatus::Running
 ```
 
 The run is created synchronously. Node jobs are dispatched to your queue immediately after.
-
-### Starting from a Blueprint
-
-For ad-hoc workflows that aren't pre-registered, pass a `Workflow` builder directly. The graph is serialized as a snapshot so workers can reconstruct it without a registry:
-
-```php
-$run = Laragraph::startFromBlueprint(
-    blueprint: Workflow::create()
-        ->withName('ad-hoc-pipeline')
-        ->addNode('step', MyNode::class)
-        ->transition(Workflow::START, 'step')
-        ->transition('step', Workflow::END),
-    initialState: ['input' => 'data'],
-);
-```
-
-> Snapshot workflows require all edges to use expression strings (not Closures), since Closures cannot be serialized.
 
 ### Controlling a Run
 
@@ -360,9 +303,7 @@ Implement `StateReducerInterface` and bind it in your service provider, or attac
 $this->app->bind(StateReducerInterface::class, MyReducer::class);
 
 // Per workflow
-Workflow::create()
-    ->withReducer(MyReducer::class)
-    // ...
+$this->withReducer(MyReducer::class)
 ```
 
 ---
@@ -376,23 +317,21 @@ LaraGraph has first-class support for pausing workflows and waiting for human in
 Pause the run **before** a node executes. On resume, the node runs normally.
 
 ```php
-Workflow::create()
-    ->addNode('review', ReviewNode::class)
-    ->interruptBefore('review');
+$this->addNode('review', ReviewNode::class)
+     ->interruptBefore('review');
 ```
 
 ### interrupt_after
 
-Pause the run **after** a node executes but before its outgoing edges are evaluated. Use this when you want a human to inspect output before the workflow continues.
+Pause the run **after** a node executes but before its outgoing edges are evaluated.
 
 ```php
-Workflow::create()
-    ->addNode('drafter', DrafterNode::class)
-    ->addNode('publish',  PublishNode::class)
-    ->transition(Workflow::START, 'drafter')
-    ->transition('drafter', 'publish')
-    ->transition('publish', Workflow::END)
-    ->interruptAfter('drafter');
+$this->addNode('drafter', DrafterNode::class)
+     ->addNode('publish',  PublishNode::class)
+     ->transition(Workflow::START, 'drafter')
+     ->transition('drafter', 'publish')
+     ->transition('publish', Workflow::END)
+     ->interruptAfter('drafter');
 ```
 
 ### Resuming
@@ -407,7 +346,7 @@ Laragraph::resume($run->id, [
 
 ### Dynamic Pause from a Node
 
-Any node can pause the run at runtime by throwing `NodePausedException`. Unlike `interruptBefore/After`, this lets the node itself decide whether to pause based on runtime state:
+Any node can pause the run at runtime by throwing `NodePausedException`:
 
 ```php
 use Cainy\Laragraph\Exceptions\NodePausedException;
@@ -425,9 +364,7 @@ class ConfidenceCheckNode implements Node
 }
 ```
 
-The engine keeps the node's active pointer alive so `resume()` re-dispatches it from the same position.
-
-You can also pass state mutations to persist before pausing (useful to record why the pause happened):
+You can also pass state mutations to persist before pausing:
 
 ```php
 throw new NodePausedException(
@@ -491,29 +428,17 @@ The engine calls `tags()` after `handle()` returns, so the node can accumulate v
 
 #### Querying execution history
 
-Each execution is stored as a `NodeExecution` record linked to its `WorkflowRun`:
-
 ```php
-use Cainy\Laragraph\Models\NodeExecution;
-
 // All executions for a run
 $run->nodeExecutions;
 
 // Total cost for a run
-$totalCost = $run->nodeExecutions
-    ->sum(fn($e) => $e->tags['cost_usd'] ?? 0);
+$run->nodeExecutions->sum(fn($e) => $e->tags['cost_usd'] ?? 0);
 
 // Per-node cost breakdown
-$costByNode = $run->nodeExecutions
+$run->nodeExecutions
     ->groupBy('node_name')
     ->map(fn($execs) => $execs->sum(fn($e) => $e->tags['cost_usd'] ?? 0));
-
-// Cost per tool-loop iteration (ordered by execution time)
-$run->nodeExecutions()
-    ->where('node_name', 'llm-agent')
-    ->orderBy('executed_at')
-    ->get()
-    ->pluck('tags.cost_usd');
 ```
 
 `NodeExecution` columns: `run_id`, `node_name`, `attempt`, `tags` (JSON), `executed_at`.
@@ -531,11 +456,11 @@ class FlakyAPINode implements Node, HasRetryPolicy
     public function retryPolicy(): RetryPolicy
     {
         return new RetryPolicy(
-            initialInterval: 1.0,   // seconds before first retry
-            backoffFactor:   2.0,   // doubles each attempt
-            maxInterval:     30.0,  // cap at 30 seconds
+            initialInterval: 1.0,
+            backoffFactor:   2.0,
+            maxInterval:     30.0,
             maxAttempts:     5,
-            jitter:          true,  // add ±25% randomness
+            jitter:          true,
         );
     }
 }
@@ -556,7 +481,43 @@ new RetryPolicy(
 )
 ```
 
-The current attempt is available via `$context->attempt` and `$context->maxAttempts`.
+### HasQueue
+
+Route a node's job to a specific queue or connection:
+
+```php
+use Cainy\Laragraph\Contracts\HasQueue;
+
+class HeavyLLMNode implements Node, HasQueue
+{
+    public function queue(): string
+    {
+        return 'llm';
+    }
+
+    public function connection(): ?string
+    {
+        return null; // use default connection
+    }
+}
+```
+
+### HasMiddleware
+
+Attach Laravel job middleware to a node's execution job:
+
+```php
+use Cainy\Laragraph\Contracts\HasMiddleware;
+use Illuminate\Queue\Middleware\RateLimited;
+
+class AnthropicNode implements Node, HasMiddleware
+{
+    public function middleware(): array
+    {
+        return [new RateLimited('anthropic')];
+    }
+}
+```
 
 ### HasLoop
 
@@ -564,7 +525,6 @@ Declare that a node should loop — driving tool execution cycles, polling, or a
 
 ```php
 use Cainy\Laragraph\Contracts\HasLoop;
-use Cainy\Laragraph\Contracts\Node;
 
 class PollingNode implements Node, HasLoop
 {
@@ -573,9 +533,9 @@ class PollingNode implements Node, HasLoop
         return new CheckStatusNode();
     }
 
-    public function loopCondition(): string|\Closure
+    public function loopCondition(): \Closure
     {
-        return "state['status'] !== 'done'";
+        return fn(array $state) => $state['status'] !== 'done';
     }
 }
 ```
@@ -586,57 +546,23 @@ When compiled, the engine injects a `{name}.__loop__` node and guards existing e
 ->interruptBefore(Workflow::toolNode('agent'))
 ```
 
-### SerializableNode
-
-Implement this on any node that needs to survive serialization in a snapshot workflow. The node must be able to round-trip through `toArray()` / `fromArray()`:
-
-```php
-use Cainy\Laragraph\Contracts\SerializableNode;
-
-final class MyNode implements SerializableNode
-{
-    public function __construct(public readonly string $prompt) {}
-
-    public function handle(NodeExecutionContext $context, array $state): array { /* ... */ }
-
-    public function toArray(): array
-    {
-        return ['__synthetic' => 'my_node', 'prompt' => $this->prompt];
-    }
-
-    public static function fromArray(array $data): static
-    {
-        return new self($data['prompt']);
-    }
-}
-```
-
-Register the type so the deserializer can find it:
-
-```php
-Workflow::registerSyntheticType('my_node', MyNode::class);
-```
-
 ---
 
 ## Built-in Nodes
 
-All built-in nodes implement `SerializableNode` and can be used in both registered and snapshot workflows.
-
 ### GateNode
 
-Pauses the workflow unconditionally until manually resumed. Use this as a static approval gate inside a workflow graph.
+Pauses the workflow unconditionally until manually resumed. Use as a static approval gate.
 
 ```php
 use Cainy\Laragraph\Nodes\GateNode;
 
-Workflow::create()
-    ->addNode('approve', new GateNode(reason: 'Manager approval required'))
-    ->transition('draft', 'approve')
-    ->transition('approve', 'publish');
+$this->addNode('approve', new GateNode(reason: 'Manager approval required'))
+     ->transition('draft', 'approve')
+     ->transition('approve', 'publish');
 ```
 
-When the gate triggers, `state['gate_reason']` is set to the reason string. Resume the run via `Laragraph::resume($runId)` once approval is given.
+When the gate triggers, `state['gate_reason']` is set to the reason string. Resume via `Laragraph::resume($runId)`.
 
 ### SendNode
 
@@ -645,22 +571,21 @@ Fan-out node — dispatches a `Send` for each item in a state list, sending each
 ```php
 use Cainy\Laragraph\Nodes\SendNode;
 
-Workflow::create()
-    ->addNode('fanout', new SendNode(
-        sourceKey:  'queries',  // state key containing the list
-        targetNode: 'worker',   // node to dispatch each item to
-        payloadKey: 'query',    // key name inside the isolated payload
-    ))
-    ->addNode('worker', WorkerNode::class)
-    ->transition(Workflow::START, 'fanout')
-    ->transition('fanout', 'worker');
+$this->addNode('fanout', new SendNode(
+         sourceKey:  'queries',
+         targetNode: 'worker',
+         payloadKey: 'query',
+     ))
+     ->addNode('worker', WorkerNode::class)
+     ->transition(Workflow::START, 'fanout')
+     ->transition('fanout', 'worker');
 ```
 
-Inside `WorkerNode`, each instance receives its slice via `$context->isolatedPayload['query']`.
+Inside `WorkerNode`, access the payload via `$context->payload('query')`.
 
 ### ReduceNode
 
-Fan-in barrier — pauses until a required number of items have accumulated in a state key. Use after a `SendNode` to wait for all parallel workers to report back.
+Fan-in barrier — pauses until a required number of items have accumulated in a state key.
 
 ```php
 use Cainy\Laragraph\Nodes\ReduceNode;
@@ -671,8 +596,6 @@ use Cainy\Laragraph\Nodes\ReduceNode;
 // Dynamic count read from state
 ->addNode('barrier', new ReduceNode(collectKey: 'results', countFromKey: 'query_count'))
 ```
-
-When the required count isn't met, the node re-pauses itself. Resume is triggered by the next worker completing.
 
 ### HttpNode
 
@@ -685,7 +608,7 @@ use Cainy\Laragraph\Nodes\HttpNode;
     url:         'https://api.example.com/items/{state.item_id}',
     method:      'GET',
     headers:     ['Authorization' => 'Bearer token'],
-    responseKey: 'api_response',  // defaults to 'response'
+    responseKey: 'api_response',
 ))
 ```
 
@@ -704,10 +627,10 @@ Pauses execution for a given number of seconds, then continues.
 ```php
 use Cainy\Laragraph\Nodes\DelayNode;
 
-->addNode('wait', new DelayNode(seconds: 300))  // pause for 5 minutes
+->addNode('wait', new DelayNode(seconds: 300))
 ```
 
-On first execution the node stores a resume-after timestamp and pauses. Your application must call `Laragraph::resume($runId)` after the delay (e.g. via a scheduled command or a queued job dispatched with a delay).
+On first execution the node stores a resume-after timestamp and pauses. Your application must call `Laragraph::resume($runId)` after the delay (e.g. via a scheduled command).
 
 ### CacheNode
 
@@ -716,13 +639,8 @@ Reads from or writes to the Laravel cache. The cache key supports `{state.key}` 
 ```php
 use Cainy\Laragraph\Nodes\CacheNode;
 
-// Read from cache into state
 ->addNode('load',  new CacheNode(operation: 'get',    cacheKey: 'report:{state.user_id}', stateKey: 'cached_report'))
-
-// Write state value into cache
 ->addNode('store', new CacheNode(operation: 'put',    cacheKey: 'report:{state.user_id}', stateKey: 'report', ttl: 3600))
-
-// Invalidate a cache entry
 ->addNode('bust',  new CacheNode(operation: 'forget', cacheKey: 'report:{state.user_id}', stateKey: 'report'))
 ```
 
@@ -735,7 +653,7 @@ use Cainy\Laragraph\Nodes\NotifyNode;
 
 ->addNode('notify', new NotifyNode(
     eventClass: ReportReady::class,
-    dataKeys:   ['user_id', 'report_url'],  // passed as positional args to the event constructor
+    dataKeys:   ['user_id', 'report_url'],
 ))
 ```
 
@@ -758,26 +676,30 @@ use Cainy\Laragraph\Integrations\Prism\PrismNode;
 use Prism\Prism\Enums\Provider;
 use Prism\Prism\Tool;
 
-$workflow = Workflow::create()
-    ->addNode('agent', new PrismNode(
-        provider:     Provider::Anthropic,
-        model:        'claude-sonnet-4-6',
-        systemPrompt: 'You are a helpful assistant.',
-        maxTokens:    1024,
-        tools: [
-            (new Tool)
-                ->as('get_weather')
-                ->for('Get weather for a city')
-                ->withStringParameter('city', 'City name')
-                ->using(fn(string $city): string => "Sunny, 22°C in {$city}"),
-        ],
-    ))
-    ->transition(Workflow::START, 'agent')
-    ->transition('agent', Workflow::END)
-    ->compile();
+class MyPipeline extends Workflow
+{
+    public function definition(): void
+    {
+        $this->addNode('agent', new PrismNode(
+                 provider:     Provider::Anthropic,
+                 model:        'claude-sonnet-4-6',
+                 systemPrompt: 'You are a helpful assistant.',
+                 maxTokens:    1024,
+                 tools: [
+                     (new Tool)
+                         ->as('get_weather')
+                         ->for('Get weather for a city')
+                         ->withStringParameter('city', 'City name')
+                         ->using(fn(string $city): string => "Sunny, 22°C in {$city}"),
+                 ],
+             ))
+             ->transition(Workflow::START, 'agent')
+             ->transition('agent', Workflow::END);
+    }
+}
 ```
 
-`PrismNode` serializes Prism `Message` objects to/from plain arrays for state storage. It returns the assistant's response (including tool calls) as a single message appended to `state['messages']`.
+`PrismNode` serializes Prism `Message` objects to/from plain arrays for state storage and returns the assistant's response appended to `state['messages']`.
 
 Override `getPrompt()` or `tools()` for dynamic behaviour:
 
@@ -787,11 +709,6 @@ class ResearchAgent extends PrismNode
     protected function getPrompt(array $state): string
     {
         return 'Research: ' . $state['topic'];
-    }
-
-    public function tools(): array
-    {
-        return [/* dynamic tools */];
     }
 }
 ```
@@ -817,30 +734,14 @@ class WeatherToolNode extends ToolNode
 
 Tool results are appended to `state['messages']` in Prism's `tool_result` format.
 
-> You typically don't need `ToolNode` when using automatic tool loops. It exists as an escape hatch for custom tool routing.
-
 ### Automatic Tool Loops
 
-`PrismNode` implements `HasLoop`. When a node has tools, calling `->compile()` automatically injects a tool execution loop — no manual wiring required.
+`PrismNode` implements `HasLoop`. When a node has tools, calling `->compile()` automatically injects a tool execution loop:
 
-```php
-$workflow = Workflow::create()
-    ->addNode('agent', new PrismNode(tools: [$weatherTool, $searchTool]))
-    ->transition(Workflow::START, 'agent')
-    ->transition('agent', Workflow::END)
-    ->compile();
-
-// Compiled graph:
-// START → agent ──(tool calls present)──→ agent.__loop__ → agent
-//                ──(no tool calls)──────→ END
 ```
-
-The compiler:
-
-1. Detects nodes implementing `HasLoop`
-2. Injects a `{name}.__loop__` node (a `ToolExecutor` for `PrismNode`)
-3. Guards existing outgoing edges with the negated loop condition
-4. Adds the loop entry and loop-back edges
+START → agent ──(tool calls present)──→ agent.__loop__ → agent
+               ──(no tool calls)──────→ END
+```
 
 To interrupt before tool execution runs:
 
@@ -850,23 +751,22 @@ To interrupt before tool execution runs:
 
 ### Manual Tool Routing
 
-For full control over tool routing, skip `HasLoop` and wire edges explicitly:
+For full control, skip `HasLoop` and wire edges explicitly:
 
 ```php
-$workflow = Workflow::create()
-    ->addNode('agent', MyAgentNode::class)
-    ->addNode('tools', WeatherToolNode::class)
-    ->transition(Workflow::START, 'agent')
-    ->transition('agent', 'tools', "not_empty(last(state['messages'])['tool_calls'] ?? [])")
-    ->transition('agent', Workflow::END, "empty(last(state['messages'])['tool_calls'] ?? [])")
-    ->transition('tools', 'agent');
+$this->addNode('agent', MyAgentNode::class)
+     ->addNode('tools', WeatherToolNode::class)
+     ->transition(Workflow::START, 'agent')
+     ->transition('agent', 'tools', fn($s) => ! empty($s['messages'][array_key_last($s['messages'])]['tool_calls'] ?? []))
+     ->transition('agent', Workflow::END, fn($s) => empty($s['messages'][array_key_last($s['messages'])]['tool_calls'] ?? []))
+     ->transition('tools', 'agent');
 ```
 
 ---
 
 ## Laravel AI Integration
 
-LaraGraph integrates with [Laravel AI](https://github.com/laravel/ai) via the `AsGraphNode` trait. Any Laravel AI agent can be dropped into a workflow graph without adapter classes.
+LaraGraph integrates with [Laravel AI](https://github.com/laravel/ai) via the `AsGraphNode` trait.
 
 ```bash
 composer require laravel/ai
@@ -898,20 +798,9 @@ class ResearchAgent implements Agent, Node
 }
 ```
 
-The trait hydrates `$this->state` and `$this->ctx` before execution, calls Laravel AI's native `prompt()`, and converts the response into a state mutation automatically.
-
-Register it like any other node:
-
-```php
-Workflow::create()
-    ->addNode('researcher', ResearchAgent::class)
-    ->transition(Workflow::START, 'researcher')
-    ->transition('researcher', Workflow::END);
-```
-
 ### Structured Output
 
-If your agent implements `HasStructuredOutput`, the trait maps the structured response keys directly to state mutation keys:
+If your agent implements `HasStructuredOutput`, the trait maps structured response keys directly to state mutation keys:
 
 ```php
 use Laravel\Ai\Contracts\HasStructuredOutput;
@@ -936,11 +825,11 @@ class ClassifierAgent implements Agent, Node, HasStructuredOutput
 }
 ```
 
-After execution, `state['category']` and `state['confidence']` are set directly. Override `mutateStateWithStructuredOutput()` to remap keys if needed.
+After execution, `state['category']` and `state['confidence']` are set directly.
 
 ### Tool-Using Agents
 
-Laravel AI agents implementing `HasTools` are automatically detected by the compiler. Tool loop injection works exactly as with `PrismNode`:
+Laravel AI agents implementing `HasTools` are automatically detected by the compiler — tool loop injection works exactly as with `PrismNode`:
 
 ```php
 use Laravel\Ai\Contracts\HasTools;
@@ -949,50 +838,49 @@ class WeatherAgent implements Agent, Node, HasTools
 {
     use AsGraphNode, Promptable;
 
-    public function tools(): array
-    {
-        return [new GetWeather];
-    }
+    public function tools(): array { return [new GetWeather]; }
 }
-
-Workflow::create()
-    ->addNode('weather', WeatherAgent::class)
-    ->transition(Workflow::START, 'weather')
-    ->transition('weather', Workflow::END)
-    ->compile(); // auto-injects weather.__loop__
 ```
 
 ---
 
 ## Sub-graph Workflows
 
-Any `CompiledWorkflow` implements `Node` and can be embedded inside another workflow. This lets you compose complex pipelines from smaller, independently testable pieces.
+Any `Workflow` subclass implements `Node` and can be embedded inside another workflow. The sub-graph is identified by its class name — no snapshot serialization required.
 
 ```php
-$researchSubgraph = Workflow::create()
-    ->withName('research')
-    ->addNode('search',  SearchNode::class)
-    ->addNode('extract', ExtractNode::class)
-    ->transition(Workflow::START, 'search')
-    ->transition('search',  'extract')
-    ->transition('extract', Workflow::END)
-    ->compile();
+class ResearchSubgraph extends Workflow
+{
+    public function definition(): void
+    {
+        $this->addNode('search',  SearchNode::class)
+             ->addNode('extract', ExtractNode::class)
+             ->transition(Workflow::START, 'search')
+             ->transition('search',  'extract')
+             ->transition('extract', Workflow::END);
+    }
+}
 
-$parentWorkflow = Workflow::create()
-    ->addNode('research', $researchSubgraph)
-    ->addNode('write',    WriteNode::class)
-    ->transition(Workflow::START, 'research')
-    ->transition('research', 'write')
-    ->transition('write', Workflow::END);
+class ParentPipeline extends Workflow
+{
+    public function definition(): void
+    {
+        $this->addNode('research', ResearchSubgraph::class)
+             ->addNode('write',    WriteNode::class)
+             ->transition(Workflow::START, 'research')
+             ->transition('research', 'write')
+             ->transition('write', Workflow::END);
+    }
+}
 ```
 
-When the engine executes a `CompiledWorkflow` node:
+When the engine executes a sub-graph node:
 
 1. A child `WorkflowRun` is created and linked via `parent_run_id` / `parent_node_name`.
 2. The child workflow starts normally — its nodes run as independent queue jobs.
-3. The parent run **pauses** at the sub-graph node, keeping its pointer alive.
+3. The parent run **pauses** at the sub-graph node.
 4. When the child completes, the engine resumes the parent automatically.
-5. The parent node computes the state delta from the child's final state and returns it as a mutation.
+5. The parent node returns the state delta from the child's final state as a mutation.
 
 ```php
 $run->parent;    // ?WorkflowRun
@@ -1003,35 +891,20 @@ $run->children;  // Collection<WorkflowRun>
 
 ## Recursion Limit
 
-The engine tracks total node executions per run and throws `RecursionLimitExceeded` if the limit is hit. This prevents runaway loops from consuming resources indefinitely.
+The engine tracks total node executions per run and throws `RecursionLimitExceeded` if the limit is hit.
 
 The default limit is `config('laragraph.recursion_limit', 25)`. Override it per workflow:
 
 ```php
-Workflow::create()
-    ->withRecursionLimit(100)
-    // ...
+class MyPipeline extends Workflow
+{
+    public function definition(): void
+    {
+        $this->withRecursionLimit(100);
+        // ...
+    }
+}
 ```
-
----
-
-## Serializable Workflows
-
-Workflows started via `Laragraph::startFromBlueprint()` are serialized as a JSON snapshot in the `workflow_runs.snapshot` column so queue workers can reconstruct the graph without a registry lookup.
-
-**Constraints for snapshot workflows:**
-
-- All edge conditions must be expression strings, not Closures.
-- All node instances must implement `SerializableNode`.
-- Class-string nodes (resolved via the container) are always safe.
-
-Register custom serializable node types:
-
-```php
-Workflow::registerSyntheticType('my_node', MyNode::class);
-```
-
-Built-in synthetic types: `gate`, `send`, `reduce`, `http`, `delay`, `cache`, `notify`, `tool_executor`.
 
 ---
 
@@ -1045,9 +918,9 @@ LaraGraph fires events throughout the workflow lifecycle. All events implement `
 | `NodeExecuting` | `runId`, `nodeName` |
 | `NodeCompleted` | `runId`, `nodeName`, `mutation`, `tags` |
 | `NodeFailed` | `runId`, `nodeName`, `exception` |
-| `WorkflowCompleted` | `runId` |
-| `WorkflowFailed` | `runId`, `exception` |
-| `WorkflowResumed` | `runId` |
+| `WorkflowCompleted` | `runId`, `workflowKey` |
+| `WorkflowFailed` | `runId`, `exception`, `workflowKey` |
+| `WorkflowResumed` | `runId`, `workflowKey` |
 
 ### Broadcasting
 
@@ -1068,11 +941,15 @@ Each run broadcasts on channel `{prefix}{runId}` (e.g. `workflow.42`). Authorize
 ```php
 // config/laragraph.php
 return [
-    // Queue name for ExecuteNode jobs
+    // Queue name for ExecuteNode jobs (overridden per-node via HasQueue)
     'queue' => env('LARAGRAPH_QUEUE', 'default'),
 
     // Queue connection (null = default connection)
     'connection' => env('LARAGRAPH_QUEUE_CONNECTION'),
+
+    // Hold jobs until the wrapping transaction commits (enable if you call
+    // Laragraph::run() inside your own DB transactions)
+    'after_commit' => env('LARAGRAPH_AFTER_COMMIT', false),
 
     // Default max attempts per node (overridden per-node via HasRetryPolicy)
     'max_node_attempts' => 3,
@@ -1083,11 +960,8 @@ return [
     // Maximum node executions per run before RecursionLimitExceeded is thrown
     'recursion_limit' => 25,
 
-    // Soft-delete workflow runs older than this many days
+    // Prune completed/failed runs older than this many days
     'prunable_after_days' => 30,
-
-    // Pre-registered workflows (name => class or callable)
-    'workflows' => [],
 
     // Default retry backoff settings (overridden per-node via HasRetryPolicy)
     'retry' => [
@@ -1120,7 +994,7 @@ use Cainy\Laragraph\Facades\Laragraph;
 use Cainy\Laragraph\Enums\RunStatus;
 
 it('completes the pipeline', function () {
-    $run = Laragraph::start('my-pipeline', ['input' => 'hello']);
+    $run = Laragraph::run(MyPipeline::class, ['input' => 'hello']);
 
     expect($run->fresh())
         ->status->toBe(RunStatus::Completed)

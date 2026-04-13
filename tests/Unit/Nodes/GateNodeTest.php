@@ -1,6 +1,5 @@
 <?php
 
-use Cainy\Laragraph\Builder\Workflow;
 use Cainy\Laragraph\Exceptions\NodePausedException;
 use Cainy\Laragraph\Nodes\GateNode;
 
@@ -30,33 +29,4 @@ it('uses default reason when none given', function () {
     } catch (NodePausedException $e) {
         expect($e->stateMutation['gate_reason'])->toBe('Approval required');
     }
-});
-
-it('serializes to array', function () {
-    $node = new GateNode('Review required');
-    $array = $node->toArray();
-
-    expect($array)->toBe([
-        '__synthetic' => 'gate',
-        'reason' => 'Review required',
-    ]);
-});
-
-it('deserializes from array', function () {
-    $restored = GateNode::fromArray(['__synthetic' => 'gate', 'reason' => 'Custom reason']);
-
-    expect($restored->reason)->toBe('Custom reason');
-});
-
-it('round-trips via Workflow::fromJson()', function () {
-    $workflow = Workflow::create()
-        ->addNode('gate', new GateNode('Needs sign-off'))
-        ->transition(Workflow::START, 'gate')
-        ->transition('gate', Workflow::END);
-
-    $compiled = Workflow::fromJson($workflow->toJson());
-
-    $node = $compiled->resolveNode('gate');
-    expect($node)->toBeInstanceOf(GateNode::class);
-    expect($node->reason)->toBe('Needs sign-off');
 });

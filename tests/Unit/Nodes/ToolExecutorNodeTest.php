@@ -70,20 +70,12 @@ it('returns error for unknown tool', function () {
     expect($mutation['messages'][0]['tool_results'][0]['result'])->toContain('not found');
 });
 
-it('serializes and deserializes correctly', function () {
+it('exposes parent node name and class', function () {
     $node = new ToolExecutor('agent', $this->parentClass::class);
 
-    $array = $node->toArray();
-
-    expect($array['__synthetic'])->toBe('tool_executor');
-    expect($array['parent_node_name'])->toBe('agent');
-    expect($array['parent_node_class'])->toBe($this->parentClass::class);
-
-    $restored = ToolExecutor::fromArray($array);
-
-    expect($restored->getParentNodeName())->toBe('agent');
-    expect($restored->getParentNodeClass())->toBe($this->parentClass::class);
-    expect($restored->name())->toBe('agent.tools');
+    expect($node->getParentNodeName())->toBe('agent');
+    expect($node->getParentNodeClass())->toBe($this->parentClass::class);
+    expect($node->name())->toBe('agent.tools');
 });
 
 it('returns empty when no tool_calls in last message', function () {

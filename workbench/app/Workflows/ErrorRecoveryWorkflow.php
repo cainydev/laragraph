@@ -6,14 +6,14 @@ use Cainy\Laragraph\Builder\Workflow;
 use Workbench\App\Nodes\FlakyNode;
 use Workbench\App\Nodes\SuccessNode;
 
-class ErrorRecoveryWorkflow
+class ErrorRecoveryWorkflow extends Workflow
 {
-    public static function build(): Workflow
+    public function definition(): void
     {
-        return Workflow::create()
-            ->addNode('flaky-node', FlakyNode::class)
-            ->addNode('success-node', SuccessNode::class)
-            ->transition(Workflow::START, 'flaky-node')
+        $this->addNode('flaky-node', FlakyNode::class)
+            ->addNode('success-node', SuccessNode::class);
+
+        $this->transition(Workflow::START, 'flaky-node')
             ->transition('flaky-node', 'success-node')
             ->transition('success-node', Workflow::END);
     }

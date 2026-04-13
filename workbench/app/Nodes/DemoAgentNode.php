@@ -51,9 +51,14 @@ class DemoAgentNode implements HasLoop, Node
         return new ToolExecutor($nodeName, static::class);
     }
 
-    public function loopCondition(): string|\Closure
+    public function loopCondition(): \Closure
     {
-        return 'not_empty(last(state["messages"])["tool_calls"] ?? [])';
+        return function (array $state): bool {
+            $messages = $state['messages'] ?? [];
+            $last = ! empty($messages) ? end($messages) : null;
+
+            return ! empty($last['tool_calls'] ?? []);
+        };
     }
 
     /**

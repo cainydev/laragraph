@@ -9,10 +9,18 @@ class HumanInterventionRequired implements ShouldBroadcast
 {
     use BroadcastsOnWorkflowChannel;
 
-    public function __construct(public readonly int $runId) {}
+    public function __construct(
+        public readonly int $runId,
+        public readonly string $nodeName,
+        public readonly ?string $reason = null,
+    ) {}
 
     public function broadcastWith(): array
     {
-        return ['runId' => $this->runId];
+        return [
+            'runId' => $this->runId,
+            'nodeName' => $this->nodeName,
+            'reason' => $this->reason,
+        ];
     }
 }

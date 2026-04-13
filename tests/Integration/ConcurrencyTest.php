@@ -6,22 +6,26 @@ use Cainy\Laragraph\Facades\Laragraph;
 use Cainy\Laragraph\Nodes\FormatNode;
 use Cainy\Laragraph\Routing\Send;
 
-use function Cainy\Laragraph\Tests\registerTestWorkflow;
+use function Cainy\Laragraph\Tests\bindTestWorkflow;
 
 it('fan-out dispatches multiple pointers and fan-in completes', function () {
-    registerTestWorkflow('fanout-test', Workflow::create()
-        ->addNode('a', new FormatNode(fn () => ['a_done' => true]))
-        ->addNode('b', new FormatNode(fn () => ['b_done' => true]))
-        ->addNode('merge', new FormatNode(fn (array $s) => [
-            'merged' => ($s['a_done'] ?? false) && ($s['b_done'] ?? false),
-        ]))
-        ->transition(Workflow::START, 'a')
-        ->transition(Workflow::START, 'b')
-        ->transition('a', 'merge')
-        ->transition('b', 'merge')
-        ->transition('merge', Workflow::END));
+    $key = bindTestWorkflow('fanout-test', new class extends Workflow {
+        public function definition(): void
+        {
+            $this->addNode('a', new FormatNode(fn () => ['a_done' => true]));
+            $this->addNode('b', new FormatNode(fn () => ['b_done' => true]));
+            $this->addNode('merge', new FormatNode(fn (array $s) => [
+                'merged' => ($s['a_done'] ?? false) && ($s['b_done'] ?? false),
+            ]));
+            $this->transition(Workflow::START, 'a');
+            $this->transition(Workflow::START, 'b');
+            $this->transition('a', 'merge');
+            $this->transition('b', 'merge');
+            $this->transition('merge', Workflow::END);
+        }
+    });
 
-    $run = Laragraph::start('fanout-test');
+    $run = Laragraph::run($key);
 
     $fresh = $run->fresh();
     expect($fresh->status)->toBe(RunStatus::Completed);
@@ -30,24 +34,27 @@ it('fan-out dispatches multiple pointers and fan-in completes', function () {
 });
 
 it('Send objects dispatch with isolated payloads via branch', function () {
-    // Use a dispatcher node that fans out via branch edge returning Send objects
-    registerTestWorkflow('send-test', Workflow::create()
-        ->addNode('dispatcher', new FormatNode(fn () => []))
-        ->addNode('worker', new FormatNode(fn (array $state, ?array $payload) => [
-            'results' => [($payload['item'] ?? 'none').' processed'],
-        ]))
-        ->addNode('collector', new FormatNode(fn (array $state) => [
-            'report' => implode(', ', $state['results'] ?? []),
-        ]))
-        ->transition(Workflow::START, 'dispatcher')
-        ->branch('dispatcher', fn (array $state) => array_map(
-            fn ($item) => new Send('worker', ['item' => $item]),
-            $state['items'] ?? [],
-        ), targets: ['worker'])
-        ->transition('worker', 'collector')
-        ->transition('collector', Workflow::END));
+    $key = bindTestWorkflow('send-test', new class extends Workflow {
+        public function definition(): void
+        {
+            $this->addNode('dispatcher', new FormatNode(fn () => []));
+            $this->addNode('worker', new FormatNode(fn (array $state, ?array $payload) => [
+                'results' => [($payload['item'] ?? 'none').' processed'],
+            ]));
+            $this->addNode('collector', new FormatNode(fn (array $state) => [
+                'report' => implode(', ', $state['results'] ?? []),
+            ]));
+            $this->transition(Workflow::START, 'dispatcher');
+            $this->branch('dispatcher', fn (array $state) => array_map(
+                fn ($item) => new Send('worker', ['item' => $item]),
+                $state['items'] ?? [],
+            ), targets: ['worker']);
+            $this->transition('worker', 'collector');
+            $this->transition('collector', Workflow::END);
+        }
+    });
 
-    $run = Laragraph::start('send-test', ['items' => ['alpha', 'beta']]);
+    $run = Laragraph::run($key, ['items' => ['alpha', 'beta']]);
 
     $fresh = $run->fresh();
     expect($fresh->status)->toBe(RunStatus::Completed);
@@ -56,21 +63,25 @@ it('Send objects dispatch with isolated payloads via branch', function () {
 });
 
 it('Send objects work from START via branch', function () {
-    registerTestWorkflow('send-from-start', Workflow::create()
-        ->addNode('worker', new FormatNode(fn (array $state, ?array $payload) => [
-            'results' => [($payload['item'] ?? 'none').' done'],
-        ]))
-        ->addNode('finish', new FormatNode(fn (array $state) => [
-            'summary' => count($state['results'] ?? []).' items',
-        ]))
-        ->branch(Workflow::START, fn (array $state) => array_map(
-            fn ($item) => new Send('worker', ['item' => $item]),
-            $state['items'] ?? [],
-        ), targets: ['worker'])
-        ->transition('worker', 'finish')
-        ->transition('finish', Workflow::END));
+    $key = bindTestWorkflow('send-from-start', new class extends Workflow {
+        public function definition(): void
+        {
+            $this->addNode('worker', new FormatNode(fn (array $state, ?array $payload) => [
+                'results' => [($payload['item'] ?? 'none').' done'],
+            ]));
+            $this->addNode('finish', new FormatNode(fn (array $state) => [
+                'summary' => count($state['results'] ?? []).' items',
+            ]));
+            $this->branch(Workflow::START, fn (array $state) => array_map(
+                fn ($item) => new Send('worker', ['item' => $item]),
+                $state['items'] ?? [],
+            ), targets: ['worker']);
+            $this->transition('worker', 'finish');
+            $this->transition('finish', Workflow::END);
+        }
+    });
 
-    $run = Laragraph::start('send-from-start', ['items' => ['x', 'y', 'z']]);
+    $run = Laragraph::run($key, ['items' => ['x', 'y', 'z']]);
 
     $fresh = $run->fresh();
     expect($fresh->status)->toBe(RunStatus::Completed);

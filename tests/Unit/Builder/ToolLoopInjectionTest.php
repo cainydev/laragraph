@@ -22,9 +22,14 @@ function makeLoopNode(): Node&HasLoop
             return new ToolExecutor($nodeName, self::class);
         }
 
-        public function loopCondition(): string|Closure
+        public function loopCondition(): \Closure
         {
-            return 'not_empty(last(state["messages"])["tool_calls"] ?? [])';
+            return function (array $state): bool {
+                $messages = $state['messages'] ?? [];
+                $last = ! empty($messages) ? end($messages) : null;
+
+                return ! empty($last['tool_calls'] ?? []);
+            };
         }
     };
 }
@@ -42,11 +47,17 @@ function makeSimpleNode(): Node
 }
 
 it('injects __loop__ node for HasLoop nodes', function () {
-    $compiled = Workflow::create()
-        ->addNode('agent', makeLoopNode())
-        ->transition(Workflow::START, 'agent')
-        ->transition('agent', Workflow::END)
-        ->compile();
+    $loopNode = makeLoopNode();
+    $compiled = (new class ($loopNode) extends Workflow {
+        public function __construct(private readonly Node $loopNode) {}
+
+        public function definition(): void
+        {
+            $this->addNode('agent', $this->loopNode);
+            $this->transition(Workflow::START, 'agent');
+            $this->transition('agent', Workflow::END);
+        }
+    })->compile();
 
     $nodes = $compiled->getNodes();
 
@@ -55,11 +66,17 @@ it('injects __loop__ node for HasLoop nodes', function () {
 });
 
 it('does not inject __loop__ for nodes without HasLoop', function () {
-    $compiled = Workflow::create()
-        ->addNode('simple', makeSimpleNode())
-        ->transition(Workflow::START, 'simple')
-        ->transition('simple', Workflow::END)
-        ->compile();
+    $simpleNode = makeSimpleNode();
+    $compiled = (new class ($simpleNode) extends Workflow {
+        public function __construct(private readonly Node $simpleNode) {}
+
+        public function definition(): void
+        {
+            $this->addNode('simple', $this->simpleNode);
+            $this->transition(Workflow::START, 'simple');
+            $this->transition('simple', Workflow::END);
+        }
+    })->compile();
 
     $nodes = $compiled->getNodes();
 
@@ -68,11 +85,17 @@ it('does not inject __loop__ for nodes without HasLoop', function () {
 });
 
 it('adds loop edges', function () {
-    $compiled = Workflow::create()
-        ->addNode('agent', makeLoopNode())
-        ->transition(Workflow::START, 'agent')
-        ->transition('agent', Workflow::END)
-        ->compile();
+    $loopNode = makeLoopNode();
+    $compiled = (new class ($loopNode) extends Workflow {
+        public function __construct(private readonly Node $loopNode) {}
+
+        public function definition(): void
+        {
+            $this->addNode('agent', $this->loopNode);
+            $this->transition(Workflow::START, 'agent');
+            $this->transition('agent', Workflow::END);
+        }
+    })->compile();
 
     $edges = $compiled->getEdges();
 
@@ -89,11 +112,17 @@ it('adds loop edges', function () {
 });
 
 it('guards existing unconditional edges with negated loop condition', function () {
-    $compiled = Workflow::create()
-        ->addNode('agent', makeLoopNode())
-        ->transition(Workflow::START, 'agent')
-        ->transition('agent', Workflow::END)
-        ->compile();
+    $loopNode = makeLoopNode();
+    $compiled = (new class ($loopNode) extends Workflow {
+        public function __construct(private readonly Node $loopNode) {}
+
+        public function definition(): void
+        {
+            $this->addNode('agent', $this->loopNode);
+            $this->transition(Workflow::START, 'agent');
+            $this->transition('agent', Workflow::END);
+        }
+    })->compile();
 
     // When loop condition is true (tool_calls non-empty), should route to loop node, not END
     $stateWithTools = ['messages' => [['type' => 'assistant', 'content' => '', 'tool_calls' => [['id' => 'tc1', 'name' => 'test', 'arguments' => []]]]]];
@@ -110,33 +139,24 @@ it('guards existing unconditional edges with negated loop condition', function (
     expect($nextNoTools)->not->toContain('agent.__loop__');
 });
 
-it('guards existing expression edges', function () {
-    $compiled = Workflow::create()
-        ->addNode('agent', makeLoopNode())
-        ->addNode('next', makeSimpleNode())
-        ->transition(Workflow::START, 'agent')
-        ->transition('agent', 'next', 'state["ready"] == true')
-        ->transition('agent', Workflow::END)
-        ->compile();
-
-    // With tool_calls, neither exit edge should fire
-    $stateWithTools = [
-        'messages' => [['type' => 'assistant', 'content' => '', 'tool_calls' => [['id' => 'tc1', 'name' => 'x', 'arguments' => []]]]],
-        'ready' => true,
-    ];
-    $next = $compiled->resolveNextNodes('agent', $stateWithTools);
-    expect($next)->toContain('agent.__loop__');
-    expect($next)->not->toContain('next');
-});
-
 it('handles multiple HasLoop nodes in one graph', function () {
-    $compiled = Workflow::create()
-        ->addNode('agent1', makeLoopNode())
-        ->addNode('agent2', makeLoopNode())
-        ->transition(Workflow::START, 'agent1')
-        ->transition('agent1', 'agent2')
-        ->transition('agent2', Workflow::END)
-        ->compile();
+    $loopNode1 = makeLoopNode();
+    $loopNode2 = makeLoopNode();
+    $compiled = (new class ($loopNode1, $loopNode2) extends Workflow {
+        public function __construct(
+            private readonly Node $loopNode1,
+            private readonly Node $loopNode2,
+        ) {}
+
+        public function definition(): void
+        {
+            $this->addNode('agent1', $this->loopNode1);
+            $this->addNode('agent2', $this->loopNode2);
+            $this->transition(Workflow::START, 'agent1');
+            $this->transition('agent1', 'agent2');
+            $this->transition('agent2', Workflow::END);
+        }
+    })->compile();
 
     $nodes = $compiled->getNodes();
 
@@ -150,11 +170,17 @@ it('toolNode helper returns correct name', function () {
 });
 
 it('guards closure-based edges', function () {
-    $compiled = Workflow::create()
-        ->addNode('agent', makeLoopNode())
-        ->transition(Workflow::START, 'agent')
-        ->transition('agent', Workflow::END, fn (array $state): bool => ($state['done'] ?? false) === true)
-        ->compile();
+    $loopNode = makeLoopNode();
+    $compiled = (new class ($loopNode) extends Workflow {
+        public function __construct(private readonly Node $loopNode) {}
+
+        public function definition(): void
+        {
+            $this->addNode('agent', $this->loopNode);
+            $this->transition(Workflow::START, 'agent');
+            $this->transition('agent', Workflow::END, fn (array $state): bool => ($state['done'] ?? false) === true);
+        }
+    })->compile();
 
     // With tool_calls, closure edge should not fire
     $stateWithTools = [

@@ -12,8 +12,8 @@ interface HasLoop
     public function loopNode(string $nodeName): Node;
 
     /**
-     * Expression string or Closure evaluated against state.
+     * Closure evaluated against state.
      * When truthy, the loop edge fires instead of the normal exit edges.
      */
-    public function loopCondition(): string|\Closure;
+    public function loopCondition(): \Closure;
 }
