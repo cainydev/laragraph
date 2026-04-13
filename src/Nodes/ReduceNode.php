@@ -11,7 +11,7 @@ use Cainy\Laragraph\Exceptions\NodeSkippedException;
  * Fan-in barrier node — waits until a required number of items have accumulated
  * in a state key before allowing execution to continue.
  */
-final class ReduceNode implements Node, IsFanInBarrier
+final class ReduceNode implements IsFanInBarrier, Node
 {
     public function __construct(
         public readonly string $collectKey,         // state key where results accumulate

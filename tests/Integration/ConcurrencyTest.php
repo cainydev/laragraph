@@ -4,6 +4,7 @@ use Cainy\Laragraph\Builder\Workflow;
 use Cainy\Laragraph\Enums\RunStatus;
 use Cainy\Laragraph\Facades\Laragraph;
 use Cainy\Laragraph\Nodes\FormatNode;
+use Cainy\Laragraph\Nodes\ReduceNode;
 use Cainy\Laragraph\Routing\Send;
 
 use function Cainy\Laragraph\Tests\bindTestWorkflow;
@@ -72,7 +73,7 @@ it('ReduceNode barrier with Send fan-out fires downstream exactly once', functio
             $this->addNode('worker', new FormatNode(fn (array $state, ?array $payload) => [
                 'items' => [($payload['id'] ?? 'x')],
             ]));
-            $this->addNode('barrier', new \Cainy\Laragraph\Nodes\ReduceNode(
+            $this->addNode('barrier', new ReduceNode(
                 collectKey: 'items',
                 expectedCount: 3,
             ));
@@ -105,7 +106,7 @@ it('ReduceNode barrier with transition fan-out fires downstream exactly once', f
         {
             $this->addNode('a', new FormatNode(fn () => ['items' => ['a']]));
             $this->addNode('b', new FormatNode(fn () => ['items' => ['b']]));
-            $this->addNode('barrier', new \Cainy\Laragraph\Nodes\ReduceNode(
+            $this->addNode('barrier', new ReduceNode(
                 collectKey: 'items',
                 expectedCount: 2,
             ));
