@@ -75,10 +75,6 @@ class PrismNode implements HasLoop, Node
         return $this->tools;
     }
 
-    // -------------------------------------------------------------------------
-    // HasLoop implementation
-    // -------------------------------------------------------------------------
-
     public function loopNode(string $nodeName): Node
     {
         return new ToolExecutor(
