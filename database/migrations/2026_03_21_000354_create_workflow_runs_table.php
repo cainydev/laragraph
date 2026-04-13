@@ -14,7 +14,6 @@ return new class extends Migration
             $table->string('parent_node_name')->nullable();
             $table->string('key')->nullable();
             $table->json('state');
-            $table->json('metadata')->nullable();
             $table->string('status');
             $table->string('current');
             $table->json('active_pointers')->nullable();

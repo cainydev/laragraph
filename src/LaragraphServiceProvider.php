@@ -15,7 +15,8 @@ class LaragraphServiceProvider extends PackageServiceProvider
             ->name('laragraph')
             ->hasConfigFile()
             ->hasMigration('2026_03_21_000354_create_workflow_runs_table')
-            ->hasMigration('2026_03_21_000355_create_workflow_node_executions_table');
+            ->hasMigration('2026_03_21_000355_create_workflow_node_executions_table')
+            ->hasMigration('2026_04_13_000000_add_metadata_to_workflow_runs_table');
     }
 
     public function packageRegistered(): void
