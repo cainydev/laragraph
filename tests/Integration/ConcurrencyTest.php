@@ -64,6 +64,70 @@ it('Send objects dispatch with isolated payloads via branch', function () {
     expect($fresh->state['results'])->toContain('beta processed');
 });
 
+it('ReduceNode barrier with Send fan-out fires downstream exactly once', function () {
+    $key = bindTestWorkflow('reduce-send-fan-in', new class extends Workflow
+    {
+        public function definition(): void
+        {
+            $this->addNode('worker', new FormatNode(fn (array $state, ?array $payload) => [
+                'items' => [($payload['id'] ?? 'x')],
+            ]));
+            $this->addNode('barrier', new \Cainy\Laragraph\Nodes\ReduceNode(
+                collectKey: 'items',
+                expectedCount: 3,
+            ));
+            $this->addNode('downstream', new FormatNode(fn (array $state) => [
+                'fired' => ($state['fired'] ?? 0) + 1,
+            ]));
+            $this->branch(Workflow::START, fn () => [
+                new Send('worker', ['id' => 'a']),
+                new Send('worker', ['id' => 'b']),
+                new Send('worker', ['id' => 'c']),
+            ], targets: ['worker']);
+            $this->transition('worker', 'barrier');
+            $this->transition('barrier', 'downstream');
+            $this->transition('downstream', Workflow::END);
+        }
+    });
+
+    $run = Laragraph::run($key);
+    $fresh = $run->fresh();
+
+    expect($fresh->status)->toBe(RunStatus::Completed);
+    expect($fresh->state['items'])->toHaveCount(3);
+    expect($fresh->state['fired'])->toBe(1);
+});
+
+it('ReduceNode barrier with transition fan-out fires downstream exactly once', function () {
+    $key = bindTestWorkflow('reduce-transition-fan-in', new class extends Workflow
+    {
+        public function definition(): void
+        {
+            $this->addNode('a', new FormatNode(fn () => ['items' => ['a']]));
+            $this->addNode('b', new FormatNode(fn () => ['items' => ['b']]));
+            $this->addNode('barrier', new \Cainy\Laragraph\Nodes\ReduceNode(
+                collectKey: 'items',
+                expectedCount: 2,
+            ));
+            $this->addNode('counter', new FormatNode(fn (array $state) => [
+                'count' => ($state['count'] ?? 0) + 1,
+            ]));
+            $this->transition(Workflow::START, 'a');
+            $this->transition(Workflow::START, 'b');
+            $this->transition('a', 'barrier');
+            $this->transition('b', 'barrier');
+            $this->transition('barrier', 'counter');
+            $this->transition('counter', Workflow::END);
+        }
+    });
+
+    $run = Laragraph::run($key);
+    $fresh = $run->fresh();
+
+    expect($fresh->status)->toBe(RunStatus::Completed);
+    expect($fresh->state['count'])->toBe(1);
+});
+
 it('Send objects work from START via branch', function () {
     $key = bindTestWorkflow('send-from-start', new class extends Workflow
     {

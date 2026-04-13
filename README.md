@@ -25,6 +25,7 @@
 - [Running a Workflow](#running-a-workflow)
   - [Starting a Run](#starting-a-run)
   - [Controlling a Run](#controlling-a-run)
+  - [Lifecycle Hooks](#lifecycle-hooks)
 - [State](#state)
   - [Reducers](#reducers)
   - [Custom Reducer](#custom-reducer)
@@ -40,6 +41,7 @@
   - [HasQueue](#hasqueue)
   - [HasMiddleware](#hasmiddleware)
   - [HasLoop](#hasloop)
+  - [IsFanInBarrier](#isfaninbarrier)
 - [Built-in Nodes](#built-in-nodes)
   - [GateNode](#gatenode)
   - [SendNode](#sendnode)
@@ -259,6 +261,17 @@ echo $run->id;     // WorkflowRun ID
 echo $run->status; // RunStatus::Running
 ```
 
+Pass an optional `metadata` array as the third argument to attach correlation data that travels with the run without being visible to nodes:
+
+```php
+$run = Laragraph::run(MyPipeline::class,
+    initialState: ['input' => 'Hello'],
+    metadata: ['trace_id' => $traceId, 'user_id' => $userId],
+);
+
+$run->metadata; // ['trace_id' => ..., 'user_id' => ...]
+```
+
 The run is created synchronously. Node jobs are dispatched to your queue immediately after.
 
 ### Controlling a Run
@@ -272,6 +285,32 @@ Laragraph::resume($run->id, ['approved' => true]);
 
 // Abort a workflow (sets status to Failed, clears all pointers)
 Laragraph::abort($run->id);
+```
+
+### Lifecycle Hooks
+
+Override any of these methods on your `Workflow` subclass to react to run lifecycle events. Hook exceptions are swallowed and never affect engine state.
+
+```php
+class MyPipeline extends Workflow
+{
+    public function definition(): void { /* ... */ }
+
+    public function onStarting(WorkflowRun $run): void
+    {
+        Log::info("Run {$run->id} starting");
+    }
+
+    public function onCompleted(WorkflowRun $run): void
+    {
+        Cache::forget("pipeline:{$run->metadata['trace_id']}");
+    }
+
+    public function onFailed(WorkflowRun $run, Throwable $exception): void
+    {
+        report($exception);
+    }
+}
 ```
 
 ---
@@ -545,6 +584,25 @@ When compiled, the engine injects a `{name}.__loop__` node and guards existing e
 ```php
 ->interruptBefore(Workflow::toolNode('agent'))
 ```
+
+### IsFanInBarrier
+
+Mark a node as a fan-in barrier. The engine will serialize concurrent arrivals under a database lock before the node executes, ensuring only the final arrival runs the node body — preventing double-dispatch on the downstream edge.
+
+```php
+use Cainy\Laragraph\Contracts\IsFanInBarrier;
+
+class MyBarrierNode implements Node, IsFanInBarrier
+{
+    public function handle(NodeExecutionContext $context, array $state): array
+    {
+        // Only called once — by the last concurrent arrival.
+        return ['merged' => true];
+    }
+}
+```
+
+`ReduceNode` implements `IsFanInBarrier` out of the box. Implement it on any custom node that acts as a convergence point for parallel branches.
 
 ---
 

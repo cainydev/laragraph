@@ -2,6 +2,7 @@
 
 namespace Cainy\Laragraph\Nodes;
 
+use Cainy\Laragraph\Contracts\IsFanInBarrier;
 use Cainy\Laragraph\Contracts\Node;
 use Cainy\Laragraph\Engine\NodeExecutionContext;
 use Cainy\Laragraph\Exceptions\NodeSkippedException;
@@ -10,7 +11,7 @@ use Cainy\Laragraph\Exceptions\NodeSkippedException;
  * Fan-in barrier node — waits until a required number of items have accumulated
  * in a state key before allowing execution to continue.
  */
-final class ReduceNode implements Node
+final class ReduceNode implements Node, IsFanInBarrier
 {
     public function __construct(
         public readonly string $collectKey,         // state key where results accumulate

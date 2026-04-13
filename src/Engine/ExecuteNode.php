@@ -8,6 +8,7 @@ use Cainy\Laragraph\Contracts\HasMiddleware;
 use Cainy\Laragraph\Contracts\HasQueue;
 use Cainy\Laragraph\Contracts\HasRetryPolicy;
 use Cainy\Laragraph\Contracts\HasTags;
+use Cainy\Laragraph\Contracts\IsFanInBarrier;
 use Cainy\Laragraph\Engine\Concerns\ManagesState;
 use Cainy\Laragraph\Engine\Concerns\TracksPointers;
 use Cainy\Laragraph\Enums\RunStatus;
@@ -178,10 +179,40 @@ class ExecuteNode implements ShouldQueue
 
             Event::dispatch(new NodeExecuting($this->runId, $this->nodeName));
 
-            $context = NodeExecutionContext::fromJob($run, $this->nodeName, $this->attempts(), $this->tries, $this->isolatedPayload);
+            $contextRun = $run;
+            if ($node instanceof IsFanInBarrier) {
+                $isPreCheckSkip = DB::transaction(function () use (&$contextRun): bool {
+                    /** @var WorkflowRun $contextRun */
+                    $contextRun = WorkflowRun::lockForUpdate()->findOrFail($this->runId);
+
+                    if ($contextRun->status === RunStatus::Failed || $contextRun->status === RunStatus::Paused) {
+                        return true;
+                    }
+
+                    $pointerCount = count(array_filter(
+                        $contextRun->active_pointers ?? [],
+                        fn (string $p) => $p === $this->nodeName,
+                    ));
+
+                    if ($pointerCount > 1) {
+                        $this->removePointer($contextRun, $this->nodeName);
+                        $contextRun->save();
+
+                        return true;
+                    }
+
+                    return false;
+                });
+
+                if ($isPreCheckSkip) {
+                    return;
+                }
+            }
+
+            $context = NodeExecutionContext::fromJob($contextRun, $this->nodeName, $this->attempts(), $this->tries, $this->isolatedPayload);
 
             try {
-                $mutation = $node->handle($context, $run->state);
+                $mutation = $node->handle($context, $contextRun->state);
             } catch (NodeSkippedException) {
                 $this->commitSkip($workflowKey);
 
@@ -214,6 +245,10 @@ class ExecuteNode implements ShouldQueue
             $workflowKey = $freshRun->key ?? '';
 
             if ($freshRun->status === RunStatus::Failed || $freshRun->status === RunStatus::Paused) {
+                return;
+            }
+
+            if (! in_array($this->nodeName, $freshRun->active_pointers ?? [], true)) {
                 return;
             }
 
@@ -319,7 +354,6 @@ class ExecuteNode implements ShouldQueue
             $run = WorkflowRun::lockForUpdate()->findOrFail($this->runId);
             $workflowKey = $run->key ?? '';
 
-            $run->node_executions = max(0, ($run->node_executions ?? 0) - 1);
             $this->removePointer($run, $this->nodeName);
 
             if (! $this->hasActivePointers($run)) {
