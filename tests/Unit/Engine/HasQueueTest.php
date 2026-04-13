@@ -1,6 +1,5 @@
 <?php
 
-use Cainy\Laragraph\Builder\CompiledWorkflow;
 use Cainy\Laragraph\Builder\Workflow;
 use Cainy\Laragraph\Contracts\HasQueue;
 use Cainy\Laragraph\Contracts\Node;
@@ -9,7 +8,7 @@ use Cainy\Laragraph\Engine\NodeExecutionContext;
 
 function makeQueuedNode(string $queue, ?string $connection = null): Node&HasQueue
 {
-    return new class ($queue, $connection) implements Node, HasQueue
+    return new class($queue, $connection) implements HasQueue, Node
     {
         public function __construct(
             private string $q,
@@ -34,10 +33,12 @@ function makeQueuedNode(string $queue, ?string $connection = null): Node&HasQueu
 }
 
 it('dispatchNode uses default queue when node does not implement HasQueue', function () {
-    $workflow = new class extends Workflow {
+    $workflow = new class extends Workflow
+    {
         public function definition(): void
         {
-            $this->addNode('plain', new class implements Node {
+            $this->addNode('plain', new class implements Node
+            {
                 public function handle(NodeExecutionContext $context, array $state): array
                 {
                     return [];
@@ -58,7 +59,8 @@ it('dispatchNode uses default queue when node does not implement HasQueue', func
 it('dispatchNode applies HasQueue queue to the job', function () {
     $queuedNode = makeQueuedNode('heavy');
 
-    $workflow = new class ($queuedNode) extends Workflow {
+    $workflow = new class($queuedNode) extends Workflow
+    {
         public function __construct(private readonly Node $queuedNode) {}
 
         public function definition(): void

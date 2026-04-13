@@ -127,7 +127,7 @@ class Workflow implements HasName, Node
         return $this;
     }
 
-    public function transition(string $from, string $to, \Closure|null $when = null): static
+    public function transition(string $from, string $to, ?\Closure $when = null): static
     {
         $this->edges[] = new Edge($from, $to, $when);
 

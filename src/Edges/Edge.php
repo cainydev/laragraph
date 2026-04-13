@@ -7,7 +7,7 @@ readonly class Edge
     public function __construct(
         public string $from,
         public string $to,
-        public \Closure|null $when = null,
+        public ?\Closure $when = null,
     ) {}
 
     public function evaluate(array $state): bool

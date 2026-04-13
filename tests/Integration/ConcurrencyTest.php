@@ -9,7 +9,8 @@ use Cainy\Laragraph\Routing\Send;
 use function Cainy\Laragraph\Tests\bindTestWorkflow;
 
 it('fan-out dispatches multiple pointers and fan-in completes', function () {
-    $key = bindTestWorkflow('fanout-test', new class extends Workflow {
+    $key = bindTestWorkflow('fanout-test', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('a', new FormatNode(fn () => ['a_done' => true]));
@@ -34,7 +35,8 @@ it('fan-out dispatches multiple pointers and fan-in completes', function () {
 });
 
 it('Send objects dispatch with isolated payloads via branch', function () {
-    $key = bindTestWorkflow('send-test', new class extends Workflow {
+    $key = bindTestWorkflow('send-test', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('dispatcher', new FormatNode(fn () => []));
@@ -63,7 +65,8 @@ it('Send objects dispatch with isolated payloads via branch', function () {
 });
 
 it('Send objects work from START via branch', function () {
-    $key = bindTestWorkflow('send-from-start', new class extends Workflow {
+    $key = bindTestWorkflow('send-from-start', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('worker', new FormatNode(fn (array $state, ?array $payload) => [

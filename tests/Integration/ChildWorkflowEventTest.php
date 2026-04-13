@@ -12,7 +12,8 @@ use function Cainy\Laragraph\Tests\bindTestWorkflow;
 
 it('fires WorkflowResumed on the parent when a child workflow completes', function () {
     // Child workflow as a proper Workflow subclass so it can be resolved by class name
-    $childKey = bindTestWorkflow('child-workflow', new class extends Workflow {
+    $childKey = bindTestWorkflow('child-workflow', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('child_step', LinearNodeA::class);
@@ -21,7 +22,8 @@ it('fires WorkflowResumed on the parent when a child workflow completes', functi
         }
     });
 
-    $parentKey = bindTestWorkflow('parent-child-event-test', new class ($childKey) extends Workflow {
+    $parentKey = bindTestWorkflow('parent-child-event-test', new class($childKey) extends Workflow
+    {
         public function __construct(private readonly string $childKey) {}
 
         public function definition(): void

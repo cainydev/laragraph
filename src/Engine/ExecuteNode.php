@@ -87,7 +87,7 @@ class ExecuteNode implements ShouldQueue
             if ($node instanceof HasMiddleware) {
                 return $node->middleware();
             }
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Node unresolvable — no middleware.
         }
 
@@ -110,7 +110,7 @@ class ExecuteNode implements ShouldQueue
                         $job->onConnection($node->connection());
                     }
                 }
-            } catch (\Throwable) {
+            } catch (Throwable) {
                 // Node not resolvable (e.g. string class not bound yet) — use defaults.
             }
         }

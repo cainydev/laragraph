@@ -8,7 +8,8 @@ use Cainy\Laragraph\Nodes\FormatNode;
 use function Cainy\Laragraph\Tests\bindTestWorkflow;
 
 it('interrupt_before pauses before the node runs', function () {
-    $key = bindTestWorkflow('ib-pause', new class extends Workflow {
+    $key = bindTestWorkflow('ib-pause', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('guarded', new FormatNode(fn () => ['executed' => true]));
@@ -26,7 +27,8 @@ it('interrupt_before pauses before the node runs', function () {
 });
 
 it('interrupt_before resumes and executes the node', function () {
-    $key = bindTestWorkflow('ib-resume', new class extends Workflow {
+    $key = bindTestWorkflow('ib-resume', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('guarded', new FormatNode(fn (array $s) => ['result' => $s['input'] ?? 'default']));
@@ -47,7 +49,8 @@ it('interrupt_before resumes and executes the node', function () {
 });
 
 it('interrupt_after pauses after the node runs', function () {
-    $key = bindTestWorkflow('ia-pause', new class extends Workflow {
+    $key = bindTestWorkflow('ia-pause', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('producer', new FormatNode(fn () => ['draft' => 'Hello world']));
@@ -68,7 +71,8 @@ it('interrupt_after pauses after the node runs', function () {
 });
 
 it('interrupt_after resumes and continues to next node', function () {
-    $key = bindTestWorkflow('ia-resume', new class extends Workflow {
+    $key = bindTestWorkflow('ia-resume', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('producer', new FormatNode(fn () => ['draft' => 'original']));
@@ -96,7 +100,8 @@ it('interrupt_after works in a loop with repeated pauses', function () {
         public int $calls = 0;
     };
 
-    $key = bindTestWorkflow('ia-loop', new class ($counter) extends Workflow {
+    $key = bindTestWorkflow('ia-loop', new class($counter) extends Workflow
+    {
         public function __construct(private readonly object $counter) {}
 
         public function definition(): void
@@ -136,7 +141,8 @@ it('interrupt_after works in a loop with repeated pauses', function () {
 });
 
 it('interrupt_before and interrupt_after can coexist', function () {
-    $key = bindTestWorkflow('ib-ia-combo', new class extends Workflow {
+    $key = bindTestWorkflow('ib-ia-combo', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('prepare', new FormatNode(fn (array $s) => ['prepared' => $s['config'] ?? 'default']));

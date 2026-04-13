@@ -17,7 +17,8 @@ function makeStubNode(): Node
 }
 
 it('creates a workflow via definition() and compiles', function () {
-    $compiled = (new class extends Workflow {
+    $compiled = (new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('a', makeStubNode());
@@ -31,7 +32,8 @@ it('creates a workflow via definition() and compiles', function () {
 });
 
 it('validates unknown from node in edge', function () {
-    expect(fn () => (new class extends Workflow {
+    expect(fn () => (new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('a', makeStubNode());
@@ -43,7 +45,8 @@ it('validates unknown from node in edge', function () {
 });
 
 it('validates unknown to node in edge', function () {
-    expect(fn () => (new class extends Workflow {
+    expect(fn () => (new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('a', makeStubNode());
@@ -54,7 +57,8 @@ it('validates unknown to node in edge', function () {
 });
 
 it('validates START has outgoing edges', function () {
-    expect(fn () => (new class extends Workflow {
+    expect(fn () => (new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('a', makeStubNode());
@@ -64,7 +68,8 @@ it('validates START has outgoing edges', function () {
 });
 
 it('rejects edges TO START', function () {
-    expect(fn () => (new class extends Workflow {
+    expect(fn () => (new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('a', makeStubNode());
@@ -75,7 +80,8 @@ it('rejects edges TO START', function () {
 });
 
 it('rejects edges FROM END', function () {
-    expect(fn () => (new class extends Workflow {
+    expect(fn () => (new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('a', makeStubNode());
@@ -88,7 +94,8 @@ it('rejects edges FROM END', function () {
 });
 
 it('allows START to END minimal workflow', function () {
-    $compiled = (new class extends Workflow {
+    $compiled = (new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('a', makeStubNode());
@@ -101,7 +108,8 @@ it('allows START to END minimal workflow', function () {
 });
 
 it('compiles with custom reducer class', function () {
-    $compiled = (new class extends Workflow {
+    $compiled = (new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('a', makeStubNode());
@@ -115,7 +123,8 @@ it('compiles with custom reducer class', function () {
 });
 
 it('compiles with interrupt configuration', function () {
-    $compiled = (new class extends Workflow {
+    $compiled = (new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('a', makeStubNode()::class);
@@ -135,10 +144,12 @@ it('compiles with interrupt configuration', function () {
 });
 
 it('calls definition() when compiling a subclass', function () {
-    $workflow = new class extends Workflow {
+    $workflow = new class extends Workflow
+    {
         public function definition(): void
         {
-            $this->addNode('defined', new class implements Node {
+            $this->addNode('defined', new class implements Node
+            {
                 public function handle(NodeExecutionContext $context, array $state): array
                 {
                     return [];
@@ -156,7 +167,8 @@ it('calls definition() when compiling a subclass', function () {
 });
 
 it('compile() is idempotent on repeated calls', function () {
-    $workflow = new class extends Workflow {
+    $workflow = new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('a', makeStubNode());

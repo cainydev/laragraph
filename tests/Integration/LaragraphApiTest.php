@@ -15,7 +15,8 @@ it('starts a workflow and runs to completion', function () {
 });
 
 it('starts with initial state and processes it', function () {
-    $key = bindTestWorkflow('echo-test', new class extends Workflow {
+    $key = bindTestWorkflow('echo-test', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('echo', new FormatNode(fn (array $state) => ['echoed' => $state['input'] ?? 'none']));
@@ -32,7 +33,8 @@ it('starts with initial state and processes it', function () {
 });
 
 it('pauses via interrupt_before', function () {
-    $key = bindTestWorkflow('pause-test', new class extends Workflow {
+    $key = bindTestWorkflow('pause-test', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('step', new FormatNode(fn () => ['done' => true]));
@@ -55,7 +57,8 @@ it('rejects pausing a non-running workflow', function () {
 });
 
 it('resumes a paused workflow', function () {
-    $key = bindTestWorkflow('resume-test', new class extends Workflow {
+    $key = bindTestWorkflow('resume-test', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('step', new FormatNode(fn (array $state) => ['result' => $state['input'] ?? 'default']));
@@ -83,7 +86,8 @@ it('rejects resuming a non-paused workflow', function () {
 });
 
 it('merges additional state on resume', function () {
-    $key = bindTestWorkflow('merge-test', new class extends Workflow {
+    $key = bindTestWorkflow('merge-test', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('check', new FormatNode(fn (array $state) => ['saw_extra' => $state['extra'] ?? false]));
@@ -105,7 +109,8 @@ it('merges additional state on resume', function () {
 });
 
 it('aborts a workflow', function () {
-    $key = bindTestWorkflow('abort-test', new class extends Workflow {
+    $key = bindTestWorkflow('abort-test', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('step', new FormatNode(fn () => []));

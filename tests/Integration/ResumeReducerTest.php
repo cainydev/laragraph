@@ -8,7 +8,8 @@ use Cainy\Laragraph\Nodes\FormatNode;
 use function Cainy\Laragraph\Tests\bindTestWorkflow;
 
 it('appends to a list key when resuming with additional state via SmartReducer', function () {
-    $key = bindTestWorkflow('reducer-resume-test', new class extends Workflow {
+    $key = bindTestWorkflow('reducer-resume-test', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('read', new FormatNode(fn (array $state) => ['saw' => $state['items'] ?? []]));
@@ -29,7 +30,8 @@ it('appends to a list key when resuming with additional state via SmartReducer',
 });
 
 it('overwrites scalar keys when resuming with additional state', function () {
-    $key = bindTestWorkflow('scalar-resume-test', new class extends Workflow {
+    $key = bindTestWorkflow('scalar-resume-test', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('check', new FormatNode(fn (array $state) => ['name' => $state['name'] ?? 'none']));
@@ -50,7 +52,8 @@ it('overwrites scalar keys when resuming with additional state', function () {
 });
 
 it('preserves existing state keys not present in additional state', function () {
-    $key = bindTestWorkflow('preserve-resume-test', new class extends Workflow {
+    $key = bindTestWorkflow('preserve-resume-test', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('check', new FormatNode(fn (array $state) => [

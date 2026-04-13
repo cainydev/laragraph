@@ -27,5 +27,4 @@ final class NotifyNode implements Node
 
         return [];
     }
-
 }

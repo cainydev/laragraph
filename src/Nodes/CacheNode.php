@@ -70,5 +70,4 @@ final class CacheNode implements Node
             return (string) $value;
         }, $template) ?? $template;
     }
-
 }

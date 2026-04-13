@@ -40,5 +40,4 @@ final class DelayNode implements Node
         // Delay complete — clean up the marker key
         return [$resumeKey => null];
     }
-
 }

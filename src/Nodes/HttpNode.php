@@ -64,5 +64,4 @@ final class HttpNode implements Node
             return (string) $value;
         }, $template) ?? $template;
     }
-
 }

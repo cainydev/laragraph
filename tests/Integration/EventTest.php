@@ -48,7 +48,8 @@ it('fires WorkflowCompleted when workflow finishes', function () {
 });
 
 it('fires WorkflowResumed on resume', function () {
-    $key = bindTestWorkflow('event-resume-test', new class extends Workflow {
+    $key = bindTestWorkflow('event-resume-test', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('step', new FormatNode(fn () => ['done' => true]));
@@ -69,7 +70,8 @@ it('fires WorkflowResumed on resume', function () {
 });
 
 it('fires WorkflowFailed on abort', function () {
-    $key = bindTestWorkflow('event-abort-test', new class extends Workflow {
+    $key = bindTestWorkflow('event-abort-test', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('step', new FormatNode(fn () => []));

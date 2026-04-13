@@ -8,7 +8,8 @@ use Cainy\Laragraph\Nodes\FormatNode;
 use function Cainy\Laragraph\Tests\bindTestWorkflow;
 
 it('rejects compile when no edges from START', function () {
-    expect(fn () => (new class extends Workflow {
+    expect(fn () => (new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('a', new FormatNode(fn () => []));
@@ -18,7 +19,8 @@ it('rejects compile when no edges from START', function () {
 });
 
 it('rejects compile when edge targets START', function () {
-    expect(fn () => (new class extends Workflow {
+    expect(fn () => (new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('a', new FormatNode(fn () => []));
@@ -29,7 +31,8 @@ it('rejects compile when edge targets START', function () {
 });
 
 it('rejects compile when edge originates from END', function () {
-    expect(fn () => (new class extends Workflow {
+    expect(fn () => (new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('a', new FormatNode(fn () => []));
@@ -42,7 +45,8 @@ it('rejects compile when edge originates from END', function () {
 });
 
 it('runs a minimal START to END workflow', function () {
-    $key = bindTestWorkflow('minimal', new class extends Workflow {
+    $key = bindTestWorkflow('minimal', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('noop', new FormatNode(fn () => ['ran' => true]));

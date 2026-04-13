@@ -21,7 +21,8 @@ function makeInfiniteLoopNode(): Node
 }
 
 it('marks the run as Failed when recursion limit is exceeded', function () {
-    $key = bindTestWorkflow('loop-limit-test', new class extends Workflow {
+    $key = bindTestWorkflow('loop-limit-test', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('loop', makeInfiniteLoopNode());
@@ -42,7 +43,8 @@ it('marks the run as Failed when recursion limit is exceeded', function () {
 });
 
 it('stops execution at the configured limit', function () {
-    $key = bindTestWorkflow('count-limit-test', new class extends Workflow {
+    $key = bindTestWorkflow('count-limit-test', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('step', makeInfiniteLoopNode());
@@ -63,7 +65,8 @@ it('stops execution at the configured limit', function () {
 });
 
 it('does not trigger limit for workflows that complete within the limit', function () {
-    $key = bindTestWorkflow('safe-limit-test', new class extends Workflow {
+    $key = bindTestWorkflow('safe-limit-test', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('a', makeInfiniteLoopNode());
@@ -81,7 +84,8 @@ it('does not trigger limit for workflows that complete within the limit', functi
 });
 
 it('falls back to config recursion_limit when not set', function () {
-    $workflow = new class extends Workflow {
+    $workflow = new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('step', makeInfiniteLoopNode());

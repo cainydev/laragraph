@@ -21,7 +21,8 @@ function makeFailingNodeInstance(): Node
 }
 
 it('sets run status to Failed when a node throws', function () {
-    $key = bindTestWorkflow('fail-test', new class extends Workflow {
+    $key = bindTestWorkflow('fail-test', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('boom', makeFailingNodeInstance());
@@ -41,7 +42,8 @@ it('sets run status to Failed when a node throws', function () {
 });
 
 it('records error details in state on failure', function () {
-    $key = bindTestWorkflow('fail-error-test', new class extends Workflow {
+    $key = bindTestWorkflow('fail-error-test', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('boom', makeFailingNodeInstance());
@@ -63,7 +65,8 @@ it('records error details in state on failure', function () {
 });
 
 it('rejects resuming a failed workflow', function () {
-    $key = bindTestWorkflow('fail-resume-test', new class extends Workflow {
+    $key = bindTestWorkflow('fail-resume-test', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('boom', makeFailingNodeInstance());

@@ -10,7 +10,8 @@ use function Cainy\Laragraph\Tests\bindTestWorkflow;
 
 it('null mutation values remove keys from state', function () {
     // FormatNode returns [$key => null] which should delete the key, not set it to null.
-    $key = bindTestWorkflow('null-tombstone', new class extends Workflow {
+    $key = bindTestWorkflow('null-tombstone', new class extends Workflow
+    {
         public function definition(): void
         {
             $this->addNode('setter', new FormatNode(fn () => ['temp' => 'value']));
@@ -28,7 +29,8 @@ it('null mutation values remove keys from state', function () {
 });
 
 it('DelayNode marker is fully removed from state after delay elapses', function () {
-    $key = bindTestWorkflow('delay-loop-marker', new class extends Workflow {
+    $key = bindTestWorkflow('delay-loop-marker', new class extends Workflow
+    {
         public function definition(): void
         {
             // Pre-seed the marker as if the delay already fired — run the node again

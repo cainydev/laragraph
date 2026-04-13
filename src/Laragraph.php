@@ -27,6 +27,7 @@ readonly class Laragraph
      * Start a new workflow run.
      *
      * @param  class-string<Workflow>  $workflowClass
+     *
      * @throws Throwable
      */
     public function run(string $workflowClass, array $initialState = []): WorkflowRun

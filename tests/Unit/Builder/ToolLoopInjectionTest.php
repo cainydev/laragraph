@@ -22,7 +22,7 @@ function makeLoopNode(): Node&HasLoop
             return new ToolExecutor($nodeName, self::class);
         }
 
-        public function loopCondition(): \Closure
+        public function loopCondition(): Closure
         {
             return function (array $state): bool {
                 $messages = $state['messages'] ?? [];
@@ -48,7 +48,8 @@ function makeSimpleNode(): Node
 
 it('injects __loop__ node for HasLoop nodes', function () {
     $loopNode = makeLoopNode();
-    $compiled = (new class ($loopNode) extends Workflow {
+    $compiled = (new class($loopNode) extends Workflow
+    {
         public function __construct(private readonly Node $loopNode) {}
 
         public function definition(): void
@@ -67,7 +68,8 @@ it('injects __loop__ node for HasLoop nodes', function () {
 
 it('does not inject __loop__ for nodes without HasLoop', function () {
     $simpleNode = makeSimpleNode();
-    $compiled = (new class ($simpleNode) extends Workflow {
+    $compiled = (new class($simpleNode) extends Workflow
+    {
         public function __construct(private readonly Node $simpleNode) {}
 
         public function definition(): void
@@ -86,7 +88,8 @@ it('does not inject __loop__ for nodes without HasLoop', function () {
 
 it('adds loop edges', function () {
     $loopNode = makeLoopNode();
-    $compiled = (new class ($loopNode) extends Workflow {
+    $compiled = (new class($loopNode) extends Workflow
+    {
         public function __construct(private readonly Node $loopNode) {}
 
         public function definition(): void
@@ -113,7 +116,8 @@ it('adds loop edges', function () {
 
 it('guards existing unconditional edges with negated loop condition', function () {
     $loopNode = makeLoopNode();
-    $compiled = (new class ($loopNode) extends Workflow {
+    $compiled = (new class($loopNode) extends Workflow
+    {
         public function __construct(private readonly Node $loopNode) {}
 
         public function definition(): void
@@ -142,7 +146,8 @@ it('guards existing unconditional edges with negated loop condition', function (
 it('handles multiple HasLoop nodes in one graph', function () {
     $loopNode1 = makeLoopNode();
     $loopNode2 = makeLoopNode();
-    $compiled = (new class ($loopNode1, $loopNode2) extends Workflow {
+    $compiled = (new class($loopNode1, $loopNode2) extends Workflow
+    {
         public function __construct(
             private readonly Node $loopNode1,
             private readonly Node $loopNode2,
@@ -171,7 +176,8 @@ it('toolNode helper returns correct name', function () {
 
 it('guards closure-based edges', function () {
     $loopNode = makeLoopNode();
-    $compiled = (new class ($loopNode) extends Workflow {
+    $compiled = (new class($loopNode) extends Workflow
+    {
         public function __construct(private readonly Node $loopNode) {}
 
         public function definition(): void
