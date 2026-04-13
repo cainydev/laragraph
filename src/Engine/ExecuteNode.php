@@ -280,7 +280,13 @@ class ExecuteNode implements ShouldQueue
                 $freshRun->state = $newState;
 
                 $tags = $node instanceof HasTags ? $node->tags() : [];
-                Event::dispatch(new NodeCompleted($this->runId, $this->nodeName, $mutation, $tags));
+                $capturedRunId = $this->runId;
+                $capturedNodeName = $this->nodeName;
+                $capturedMutation = $mutation;
+                $capturedTags = $tags;
+                DB::afterCommit(function () use ($capturedRunId, $capturedNodeName, $capturedMutation, $capturedTags): void {
+                    Event::dispatch(new NodeCompleted($capturedRunId, $capturedNodeName, $capturedMutation, $capturedTags));
+                });
 
                 if ($node instanceof HasTags && ! empty($tags)) {
                     NodeExecution::create([
@@ -444,19 +450,22 @@ class ExecuteNode implements ShouldQueue
         $run->save();
     }
 
-    /**
-     * @throws Throwable
-     */
     public function failed(Throwable $exception): void
     {
         $root = $exception->getPrevious() ?? $exception;
 
         // RecursionLimitExceeded is never retried
         if ($root instanceof RecursionLimitExceeded) {
-            $workflowKey = $this->markFailed($root);
-            Event::dispatch(new NodeFailed($this->runId, $this->nodeName, $root));
-            Event::dispatch(new WorkflowFailed($this->runId, $root, $workflowKey));
-            $this->fireFailedHook($workflowKey, $root);
+            $workflowKey = '';
+            try {
+                $workflowKey = $this->markFailed($root);
+            } catch (Throwable) {
+                // best-effort; DB may be unavailable
+            } finally {
+                Event::dispatch(new NodeFailed($this->runId, $this->nodeName, $root));
+                Event::dispatch(new WorkflowFailed($this->runId, $root, $workflowKey));
+                $this->fireFailedHook($workflowKey, $root);
+            }
 
             return;
         }
@@ -473,10 +482,16 @@ class ExecuteNode implements ShouldQueue
                     $node = $workflow->resolveNode($this->nodeName);
 
                     if ($node instanceof HasRetryPolicy && ! $node->retryPolicy()->shouldRetry($root)) {
-                        $workflowKey = $this->markFailed($root);
-                        Event::dispatch(new NodeFailed($this->runId, $this->nodeName, $root));
-                        Event::dispatch(new WorkflowFailed($this->runId, $root, $workflowKey));
-                        $this->fireFailedHook($workflowKey, $root);
+                        $workflowKey = '';
+                        try {
+                            $workflowKey = $this->markFailed($root);
+                        } catch (Throwable) {
+                            // best-effort; DB may be unavailable
+                        } finally {
+                            Event::dispatch(new NodeFailed($this->runId, $this->nodeName, $root));
+                            Event::dispatch(new WorkflowFailed($this->runId, $root, $workflowKey));
+                            $this->fireFailedHook($workflowKey, $root);
+                        }
 
                         return;
                     }
@@ -486,11 +501,16 @@ class ExecuteNode implements ShouldQueue
             }
         }
 
-        $workflowKey = $this->markFailed($root);
-
-        Event::dispatch(new NodeFailed($this->runId, $this->nodeName, $root));
-        Event::dispatch(new WorkflowFailed($this->runId, $root, $workflowKey));
-        $this->fireFailedHook($workflowKey, $root);
+        $workflowKey = '';
+        try {
+            $workflowKey = $this->markFailed($root);
+        } catch (Throwable) {
+            // best-effort; DB may be unavailable
+        } finally {
+            Event::dispatch(new NodeFailed($this->runId, $this->nodeName, $root));
+            Event::dispatch(new WorkflowFailed($this->runId, $root, $workflowKey));
+            $this->fireFailedHook($workflowKey, $root);
+        }
     }
 
     private function markFailed(Throwable $root): string

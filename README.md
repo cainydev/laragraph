@@ -688,7 +688,7 @@ use Cainy\Laragraph\Nodes\DelayNode;
 ->addNode('wait', new DelayNode(seconds: 300))
 ```
 
-On first execution the node stores a resume-after timestamp and pauses. Your application must call `Laragraph::resume($runId)` after the delay (e.g. via a scheduled command).
+On first execution the node stores a resume-after timestamp, dispatches a delayed queue job, and pauses. The job automatically calls `Laragraph::resume()` when the delay elapses — no scheduled command or polling required.
 
 ### CacheNode
 

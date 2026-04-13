@@ -69,3 +69,33 @@ it('handles nested arrays as scalars when not lists', function () {
     // Associative arrays are overwritten, not merged
     expect($state['error'])->toBe(['node' => 'b', 'message' => 'also fail']);
 });
+
+it('merges empty list mutation into existing list as a no-op', function () {
+    $state = $this->reducer->reduce(
+        ['items' => ['a', 'b']],
+        ['items' => []],
+    );
+
+    // array_is_list([]) === true, so both sides are lists — merge is a no-op
+    expect($state['items'])->toBe(['a', 'b']);
+});
+
+it('merges populated list into empty list current state', function () {
+    $state = $this->reducer->reduce(
+        ['items' => []],
+        ['items' => ['a', 'b']],
+    );
+
+    // Both sides are lists (empty is still a list) — appends correctly
+    expect($state['items'])->toBe(['a', 'b']);
+});
+
+it('overwrites associative array when mutation is empty list', function () {
+    $state = $this->reducer->reduce(
+        ['meta' => ['key' => 'value']],
+        ['meta' => []],
+    );
+
+    // current is associative (not a list), mutation is list — overwrite wins
+    expect($state['meta'])->toBe([]);
+});

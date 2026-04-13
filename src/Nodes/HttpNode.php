@@ -61,6 +61,14 @@ final class HttpNode implements Node
                 $value = $value[$key];
             }
 
+            if (is_array($value)) {
+                return '';
+            }
+
+            if (is_object($value)) {
+                return method_exists($value, '__toString') ? (string) $value : '';
+            }
+
             return (string) $value;
         }, $template) ?? $template;
     }

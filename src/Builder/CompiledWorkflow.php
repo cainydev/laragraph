@@ -41,7 +41,13 @@ class CompiledWorkflow
             return $node;
         }
 
-        return app($node);
+        $resolved = app($node);
+
+        if (! $resolved instanceof Node) {
+            throw new \InvalidArgumentException("Class [{$node}] was registered as a node but does not implement ".Node::class.'.');
+        }
+
+        return $resolved;
     }
 
     /**

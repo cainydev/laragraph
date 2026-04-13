@@ -38,14 +38,32 @@ it('resolves a Node instance directly', function () {
 });
 
 it('resolves a class-string node via container', function () {
+    $node = new class implements Node
+    {
+        public function handle(NodeExecutionContext $context, array $state): array
+        {
+            return [];
+        }
+    };
+
+    app()->bind('test-node-class', fn () => $node);
+
     $compiled = new CompiledWorkflow(
-        nodes: ['a' => SmartReducer::class], // Not Node but tests app() resolution
+        nodes: ['a' => 'test-node-class'],
         edges: [],
     );
 
-    // This would throw if the class doesn't implement Node in real usage,
-    // but we're testing the resolution path
-    expect(fn () => $compiled->resolveNode('a'))->not->toThrow(InvalidArgumentException::class);
+    expect($compiled->resolveNode('a'))->toBe($node);
+});
+
+it('throws when a class-string node does not implement Node', function () {
+    $compiled = new CompiledWorkflow(
+        nodes: ['a' => SmartReducer::class],
+        edges: [],
+    );
+
+    expect(fn () => $compiled->resolveNode('a'))
+        ->toThrow(InvalidArgumentException::class, 'does not implement');
 });
 
 it('throws for unknown node name', function () {
