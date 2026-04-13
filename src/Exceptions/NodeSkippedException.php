@@ -7,7 +7,7 @@ namespace Cainy\Laragraph\Exceptions;
  * the pointer is removed and no edges are evaluated. The run stays active as
  * long as other pointers remain.
  *
- * Used by ReduceNode to absorb early fan-in arrivals without pausing the run.
+ * Used by custom nodes that need to signal a silent skip without pausing the run.
  */
 class NodeSkippedException extends \RuntimeException
 {

@@ -180,8 +180,10 @@ class ExecuteNode implements ShouldQueue
             Event::dispatch(new NodeExecuting($this->runId, $this->nodeName));
 
             $contextRun = $run;
+            $isPreCheckSkip = false;
+
             if ($node instanceof IsFanInBarrier) {
-                $isPreCheckSkip = DB::transaction(function () use (&$contextRun): bool {
+                $isPreCheckSkip = DB::transaction(function () use (&$contextRun, $workflow): bool {
                     /** @var WorkflowRun $contextRun */
                     $contextRun = WorkflowRun::lockForUpdate()->findOrFail($this->runId);
 
@@ -189,6 +191,26 @@ class ExecuteNode implements ShouldQueue
                         return true;
                     }
 
+                    // Phase 1: Early arrivals — predecessors are not yet fully complete.
+                    // Remove this pointer to maintain the 1:1 pointer/job equilibrium,
+                    // then skip so the next arrival can re-check once more work lands.
+                    $predecessors = $workflow->getIncomingNodesFor($this->nodeName);
+
+                    foreach ($predecessors as $predecessor) {
+                        $expected = $contextRun->state['__expected_spawns_for_'.$predecessor] ?? 0;
+                        $completed = $contextRun->state['__completed_spawns_for_'.$predecessor] ?? 0;
+
+                        if ($expected === 0 || $completed < $expected) {
+                            $this->removePointer($contextRun, $this->nodeName);
+                            $contextRun->save();
+
+                            return true;
+                        }
+                    }
+
+                    // Phase 2: All predecessors are done. If multiple pointer entries exist
+                    // for this barrier, this is a competing late arrival — absorb one pointer
+                    // and skip so only one job proceeds to handle().
                     $pointerCount = count(array_filter(
                         $contextRun->active_pointers ?? [],
                         fn (string $p) => $p === $this->nodeName,
@@ -201,12 +223,14 @@ class ExecuteNode implements ShouldQueue
                         return true;
                     }
 
+                    // Phase 3: Exactly one pointer remains — this job is the sole claimant.
+                    // Leave the pointer for the main transaction to consume via finalizePointers.
                     return false;
                 });
+            }
 
-                if ($isPreCheckSkip) {
-                    return;
-                }
+            if ($isPreCheckSkip) {
+                return;
             }
 
             $context = NodeExecutionContext::fromJob($contextRun, $this->nodeName, $this->attempts(), $this->tries, $this->isolatedPayload);
@@ -311,13 +335,49 @@ class ExecuteNode implements ShouldQueue
 
                 if (! empty($directSends)) {
                     $nextTargets = $directSends;
+
+                    // Record expected spawn counts per target so downstream barriers
+                    // know exactly how many workers to wait for.
+                    $sendsByNode = [];
+                    foreach ($directSends as $send) {
+                        $sendsByNode[$send->nodeName] = ($sendsByNode[$send->nodeName] ?? 0) + 1;
+                    }
+                    $spawnState = $freshRun->state;
+                    foreach ($sendsByNode as $targetNode => $count) {
+                        $spawnKey = '__expected_spawns_for_'.$targetNode;
+                        $spawnState[$spawnKey] = ($spawnState[$spawnKey] ?? 0) + $count;
+                    }
+                    $freshRun->state = $spawnState;
+
                     $this->finalizePointers($freshRun, $nextTargets, $completed, $parentRunId, $parentNodeName);
 
                     return;
                 }
             }
 
+            // Record that this node has committed its result so downstream barriers
+            // can count completions against the expected spawn totals.
+            $trackedState = $freshRun->state;
+            $completionKey = '__completed_spawns_for_'.$this->nodeName;
+            $trackedState[$completionKey] = ($trackedState[$completionKey] ?? 0) + 1;
+
             $nextTargets = $workflow->resolveNextNodes($this->nodeName, $newState);
+
+            // Record expected spawn counts for every dispatched target so downstream
+            // barriers know exactly how many completions to wait for. Send objects
+            // each dispatch one worker job; normal string targets dispatch one job each.
+            foreach ($nextTargets as $target) {
+                if ($target instanceof Send) {
+                    $spawnKey = '__expected_spawns_for_'.$target->nodeName;
+                } elseif ($target !== Workflow::END) {
+                    $spawnKey = '__expected_spawns_for_'.$target;
+                } else {
+                    continue;
+                }
+                $trackedState[$spawnKey] = ($trackedState[$spawnKey] ?? 0) + 1;
+            }
+            $freshRun->state = $trackedState;
+
             $this->finalizePointers($freshRun, $nextTargets, $completed, $parentRunId, $parentNodeName);
         });
 
@@ -347,7 +407,7 @@ class ExecuteNode implements ShouldQueue
     }
 
     /**
-     * Commit a NodeSkippedException (ReduceNode waiting for remaining fan-in arrivals).
+     * Commit a NodeSkippedException (node signalled it should be skipped).
      */
     private function commitSkip(string &$workflowKey): void
     {

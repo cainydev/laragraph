@@ -104,6 +104,30 @@ class CompiledWorkflow
     }
 
     /**
+     * Return all node names that have a direct edge pointing to $nodeName.
+     * Used by the engine's IsFanInBarrier pre-check to identify which predecessor
+     * nodes must have fully completed before the barrier is allowed to fire.
+     *
+     * @return string[]
+     */
+    public function getIncomingNodesFor(string $nodeName): array
+    {
+        $incoming = [];
+
+        foreach ($this->edges as $edge) {
+            if ($edge instanceof BranchEdge) {
+                if (in_array($nodeName, $edge->targets, true)) {
+                    $incoming[] = $edge->from;
+                }
+            } elseif ($edge->to === $nodeName) {
+                $incoming[] = $edge->from;
+            }
+        }
+
+        return array_values(array_unique($incoming));
+    }
+
+    /**
      * @return array<string, string|Node>
      */
     public function getNodes(): array

@@ -45,7 +45,7 @@
 - [Built-in Nodes](#built-in-nodes)
   - [GateNode](#gatenode)
   - [SendNode](#sendnode)
-  - [ReduceNode](#reducenode)
+  - [BarrierNode](#barriernode)
   - [HttpNode](#httpnode)
   - [DelayNode](#delaynode)
   - [CacheNode](#cachenode)
@@ -215,7 +215,7 @@ $this->addNode('split',    SplitNode::class)
      ->transition('merge', Workflow::END);
 ```
 
-`branch-a` and `branch-b` run as independent queue jobs. Fan-in barrier logic can be handled with the built-in `ReduceNode` or in your own node by inspecting state.
+`branch-a` and `branch-b` run as independent queue jobs. Use a `BarrierNode` as the merge node to wait for all branches before continuing.
 
 ### Dynamic Fan-out with Send
 
@@ -587,7 +587,7 @@ When compiled, the engine injects a `{name}.__loop__` node and guards existing e
 
 ### IsFanInBarrier
 
-Mark a node as a fan-in barrier. The engine will serialize concurrent arrivals under a database lock before the node executes, ensuring only the final arrival runs the node body — preventing double-dispatch on the downstream edge.
+Mark a node as a fan-in barrier. The engine tracks how many workers were dispatched into this node and how many have committed their results. It serialises concurrent arrivals under a database lock, and only the final arrival — the one that sees all predecessors complete — runs `handle()`. All earlier arrivals skip cleanly.
 
 ```php
 use Cainy\Laragraph\Contracts\IsFanInBarrier;
@@ -596,13 +596,13 @@ class MyBarrierNode implements Node, IsFanInBarrier
 {
     public function handle(NodeExecutionContext $context, array $state): array
     {
-        // Only called once — by the last concurrent arrival.
+        // Only called once — after every predecessor has committed.
         return ['merged' => true];
     }
 }
 ```
 
-`ReduceNode` implements `IsFanInBarrier` out of the box. Implement it on any custom node that acts as a convergence point for parallel branches.
+`BarrierNode` implements `IsFanInBarrier` out of the box. Implement it on any custom node that acts as a convergence point for parallel branches.
 
 ---
 
@@ -641,49 +641,21 @@ $this->addNode('fanout', new SendNode(
 
 Inside `WorkerNode`, access the payload via `$context->payload('query')`.
 
-### ReduceNode
+### BarrierNode
 
-Fan-in barrier — waits for all parallel workers to complete before allowing the downstream edge to fire. The node implements `IsFanInBarrier`, so the engine serialises concurrent arrivals under a database lock and only the last arrival runs the node body.
-
-```php
-use Cainy\Laragraph\Nodes\ReduceNode;
-```
-
-There are three modes, and choosing the wrong one is a common source of double-fire bugs:
-
-**Pattern 1 — Pointer-only fan-in (recommended)**
-
-Fires as soon as the last dispatched worker finishes, regardless of what workers wrote to state. Use this when workers may produce a variable number of items per run.
+Fan-in barrier — waits for all parallel workers to complete before allowing the downstream edge to fire. Zero configuration required.
 
 ```php
-// expectedCount omitted (defaults to 0) → state check is bypassed entirely.
-// The barrier fires purely on active_pointers: one pointer per dispatched job.
-->addNode('barrier', new ReduceNode(collectKey: 'results'))
+use Cainy\Laragraph\Nodes\BarrierNode;
+
+->addNode('barrier', new BarrierNode())
+->transition('worker', 'barrier')
+->transition('barrier', 'aggregator')
 ```
 
-**Pattern 2 — State-content fan-in**
+The engine automatically tracks how many workers were dispatched into the barrier and how many have committed their results. Early arrivals skip cleanly (removing their pointer to maintain equilibrium). Only the final arrival — when all predecessors are fully complete — runs `handle()` and evaluates the downstream edges. The node body itself is a no-op; all logic lives in the engine.
 
-Fires when a specific number of items have accumulated in a state key. Only safe when every worker is guaranteed to push **exactly one item**. If a single worker can push more than one item, the count will exceed the threshold before all workers finish and the barrier fires early.
-
-```php
-// Static count
-->addNode('barrier', new ReduceNode(collectKey: 'results', expectedCount: 3))
-
-// Dynamic count read from a state key set before fan-out
-->addNode('barrier', new ReduceNode(collectKey: 'results', countFromKey: 'query_count'))
-```
-
-**Pattern 3 — Both guards**
-
-The last-arriving pointer AND the state item count must both be satisfied. The pointer check runs first (engine level); early arrivals are skipped before `handle()` is called. The last arrival then validates the state count. Only correct when each worker pushes exactly one item.
-
-```php
-->addNode('barrier', new ReduceNode(collectKey: 'results', countFromKey: 'worker_count'))
-// worker_count must equal the number of dispatched Send jobs and each job
-// must append exactly one item to results[].
-```
-
-> **Footgun:** never use `countFromKey` or `expectedCount` pointing at a count that measures *worker outputs* if a single worker can produce multiple outputs. The pointer count (one per dispatched job) and the output count are only equal when each worker produces exactly one item. When they can diverge, use Pattern 1.
+Works with both transition fan-out and `Send`-based fan-out, including multiple sequential barriers in the same workflow.
 
 ### HttpNode
 

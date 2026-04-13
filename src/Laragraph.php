@@ -236,19 +236,29 @@ readonly class Laragraph
     }
 
     /**
-     * Push pointer entries for a mix of string node names and Send objects.
+     * Push pointer entries for a mix of string node names and Send objects,
+     * and record the expected spawn count for each dispatched node so downstream
+     * IsFanInBarrier nodes can wait for the correct number of completions.
      *
      * @param  array<string|Send>  $targets
      */
     private function pushTargetPointers(WorkflowRun $run, array $targets): void
     {
+        $state = $run->state;
+
         foreach ($targets as $target) {
             if ($target instanceof Send) {
                 $this->pushPointers($run, $target->nodeName);
+                $spawnKey = '__expected_spawns_for_'.$target->nodeName;
+                $state[$spawnKey] = ($state[$spawnKey] ?? 0) + 1;
             } elseif ($target !== Workflow::END) {
                 $this->pushPointers($run, $target);
+                $spawnKey = '__expected_spawns_for_'.$target;
+                $state[$spawnKey] = ($state[$spawnKey] ?? 0) + 1;
             }
         }
+
+        $run->state = $state;
     }
 
     /**

@@ -138,38 +138,19 @@ use Cainy\Laragraph\Nodes\SendNode;
 ->transition('worker', 'barrier')
 ```
 
-### Fan-in with ReduceNode — choosing the right pattern
+### Fan-in with BarrierNode
 
-**IMPORTANT: picking the wrong pattern causes double-fire bugs.**
-
-**Pattern 1 — Pointer-only (recommended, always safe)**
-
-Fires when the last dispatched worker finishes. Completely independent of what workers wrote to state. Use this by default, and always when a worker may push a variable number of items.
+Drop a `BarrierNode` anywhere parallel branches converge. No configuration needed — the engine tracks dispatch and completion counts automatically.
 
 ```php
-->addNode('barrier', new ReduceNode(collectKey: 'results'))
-// No expectedCount / countFromKey → state check bypassed, fires on last pointer.
+use Cainy\Laragraph\Nodes\BarrierNode;
+
+->addNode('barrier', new BarrierNode())
+->transition('worker', 'barrier')   // one or many workers feeding in
+->transition('barrier', 'next')
 ```
 
-**Pattern 2 — State-content count (use with care)**
-
-Fires when `count(state['results']) >= N`. Only safe when every worker pushes **exactly one item**. If any worker can push more than one item, the barrier may fire before all workers are done.
-
-```php
-->addNode('barrier', new ReduceNode(collectKey: 'results', expectedCount: 3))
-// Or dynamic:
-->addNode('barrier', new ReduceNode(collectKey: 'results', countFromKey: 'query_count'))
-```
-
-**Pattern 3 — Both guards**
-
-Last pointer AND state count must both be satisfied. Still requires each worker to push exactly one item.
-
-```php
-->addNode('barrier', new ReduceNode(collectKey: 'results', countFromKey: 'worker_count'))
-```
-
-> Never point `countFromKey` at a count of worker *outputs* if a single worker can produce multiple outputs. Use Pattern 1 instead.
+Works with transition fan-out, `Send`-based fan-out, and sequential back-to-back barriers. Early arrivals skip cleanly; the final arrival (all predecessors complete) is the only one that fires the downstream edge.
 
 ---
 
@@ -221,7 +202,7 @@ Set globally in a service provider: `$this->app->bind(StateReducerInterface::cla
 | `HasQueue` | Route node job to a specific queue/connection |
 | `HasMiddleware` | Attach Laravel job middleware (e.g. `RateLimited`) |
 | `HasLoop` | Declare a loop sub-node and condition; compiler injects edges |
-| `IsFanInBarrier` | Mark a custom node as a fan-in barrier (like `ReduceNode`) |
+| `IsFanInBarrier` | Mark a custom node as a fan-in barrier (like `BarrierNode`) |
 
 Example — retry policy:
 
@@ -249,7 +230,7 @@ public function retryPolicy(): RetryPolicy
 |---|---|
 | `GateNode(reason:)` | Unconditional pause for human approval |
 | `SendNode(sourceKey:, targetNode:, payloadKey:)` | Fan-out over a state list |
-| `ReduceNode(collectKey:, expectedCount:, countFromKey:)` | Fan-in barrier |
+| `BarrierNode()` | Fan-in barrier — waits for all parallel workers before continuing |
 | `DelayNode(seconds:)` | Pause for N seconds; auto-resumes via queued job — no CRON needed |
 | `HttpNode(url:, method:, headers:, bodyKey:, responseKey:)` | HTTP request; URL supports `{state.key}` interpolation |
 | `CacheNode(operation:, cacheKey:, stateKey:, ttl:)` | Cache get/put/forget; key supports `{state.key}` interpolation |
