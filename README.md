@@ -643,17 +643,47 @@ Inside `WorkerNode`, access the payload via `$context->payload('query')`.
 
 ### ReduceNode
 
-Fan-in barrier — pauses until a required number of items have accumulated in a state key.
+Fan-in barrier — waits for all parallel workers to complete before allowing the downstream edge to fire. The node implements `IsFanInBarrier`, so the engine serialises concurrent arrivals under a database lock and only the last arrival runs the node body.
 
 ```php
 use Cainy\Laragraph\Nodes\ReduceNode;
+```
 
-// Static expected count
+There are three modes, and choosing the wrong one is a common source of double-fire bugs:
+
+**Pattern 1 — Pointer-only fan-in (recommended)**
+
+Fires as soon as the last dispatched worker finishes, regardless of what workers wrote to state. Use this when workers may produce a variable number of items per run.
+
+```php
+// expectedCount omitted (defaults to 0) → state check is bypassed entirely.
+// The barrier fires purely on active_pointers: one pointer per dispatched job.
+->addNode('barrier', new ReduceNode(collectKey: 'results'))
+```
+
+**Pattern 2 — State-content fan-in**
+
+Fires when a specific number of items have accumulated in a state key. Only safe when every worker is guaranteed to push **exactly one item**. If a single worker can push more than one item, the count will exceed the threshold before all workers finish and the barrier fires early.
+
+```php
+// Static count
 ->addNode('barrier', new ReduceNode(collectKey: 'results', expectedCount: 3))
 
-// Dynamic count read from state
+// Dynamic count read from a state key set before fan-out
 ->addNode('barrier', new ReduceNode(collectKey: 'results', countFromKey: 'query_count'))
 ```
+
+**Pattern 3 — Both guards**
+
+The last-arriving pointer AND the state item count must both be satisfied. The pointer check runs first (engine level); early arrivals are skipped before `handle()` is called. The last arrival then validates the state count. Only correct when each worker pushes exactly one item.
+
+```php
+->addNode('barrier', new ReduceNode(collectKey: 'results', countFromKey: 'worker_count'))
+// worker_count must equal the number of dispatched Send jobs and each job
+// must append exactly one item to results[].
+```
+
+> **Footgun:** never use `countFromKey` or `expectedCount` pointing at a count that measures *worker outputs* if a single worker can produce multiple outputs. The pointer count (one per dispatched job) and the output count are only equal when each worker produces exactly one item. When they can diverge, use Pattern 1.
 
 ### HttpNode
 
