@@ -22,6 +22,7 @@
   - [Branch Edges](#branch-edges)
   - [Parallel Branches](#parallel-branches)
   - [Dynamic Fan-out with Send](#dynamic-fan-out-with-send)
+  - [Fan-out Patterns](#fan-out-patterns)
 - [Running a Workflow](#running-a-workflow)
   - [Starting a Run](#starting-a-run)
   - [Controlling a Run](#controlling-a-run)
@@ -52,14 +53,16 @@
   - [NotifyNode](#notifynode)
 - [Prism Integration](#prism-integration)
   - [PrismNode](#prismnode)
-  - [ToolNode](#toolnode)
-  - [Automatic Tool Loops](#automatic-tool-loops)
-  - [Manual Tool Routing](#manual-tool-routing)
+  - [PrismToolNode](#prismtoolnode)
+  - [ToolNode (manual routing)](#toolnode-manual-routing)
 - [Laravel AI Integration](#laravel-ai-integration)
   - [AsGraphNode Trait](#asgraphnode-trait)
   - [Structured Output](#structured-output)
   - [Tool-Using Agents](#tool-using-agents)
 - [Sub-graph Workflows](#sub-graph-workflows)
+  - [Embedded vs Send-dispatched](#embedded-vs-send-dispatched)
+  - [Child Failure Cascade](#child-failure-cascade)
+  - [Accessing parent metadata from a child](#accessing-parent-metadata-from-a-child)
 - [Recursion Limit](#recursion-limit)
 - [Events](#events)
 - [Configuration](#configuration)
@@ -152,18 +155,27 @@ class SummarizeNode implements Node
 #### NodeExecutionContext
 
 ```php
-$context->runId           // int    — ID of the WorkflowRun
-$context->workflowKey     // string — class name of the workflow
-$context->nodeName        // string — name of this node in the graph
-$context->attempt         // int    — current queue attempt (1-based)
-$context->maxAttempts     // int    — maximum attempts configured
-$context->createdAt       // DateTimeImmutable
-$context->isolatedPayload // ?array — payload injected by a Send (see Dynamic Fan-out)
+$context->runId            // int    — ID of the WorkflowRun
+$context->workflowKey      // string — class name of the workflow
+$context->nodeName         // string — name of this node in the graph
+$context->attempt          // int    — current queue attempt (1-based)
+$context->maxAttempts      // int    — maximum attempts configured
+$context->createdAt        // DateTimeImmutable
+$context->isolatedPayload  // ?array — payload injected by a Send (see Dynamic Fan-out)
+$context->parentRunId      // ?int   — set when this run was dispatched as a child workflow
+$context->parentNodeName   // ?string — the sub-graph node name on the parent
+$context->routing          // array — read-only engine routing snapshot (counters, interrupt marker, etc.)
 
-// Helpers for Send-dispatched nodes:
+// Helpers:
 $context->isSendExecution()        // bool   — true when dispatched via a Send
 $context->payload('key', $default) // mixed  — read a value from the isolated payload
+$context->parentMetadata()         // ?array — lazy-loads the parent run's metadata (null at top-level)
 ```
+
+User state vs engine state: `$state` only contains keys your nodes write. Engine
+bookkeeping (spawn counters, interrupt markers, gate reasons, child-run ids,
+error summaries) lives on a separate `workflow_runs.routing` column and is
+never merged into `$state`. Read it via `$context->routing` when you need it.
 
 ### Transitions
 
@@ -243,6 +255,66 @@ public function handle(NodeExecutionContext $context, array $state): array
 ```
 
 The same fan-out is available via the `SendNode` prebuilt (see [Built-in Nodes](#built-in-nodes)).
+
+#### Fan-out Patterns
+
+Three canonical shapes cover almost every real workflow:
+
+**1. One-shot fan-out → barrier.** Single worker node per item, then a
+`BarrierNode`. Use for independent work with no per-item downstream steps.
+
+```php
+->branch('split', fn($s) => array_map(fn($id) => new Send('worker', ['id' => $id]), $s['ids']), ['worker'])
+->transition('worker', 'barrier')
+->transition('barrier', 'aggregate')
+```
+
+**2. Per-item pipeline → child workflow → barrier.** When each item needs a
+multi-step pipeline (enrich → qualify → classify → draft), make the pipeline
+its own `Workflow` and dispatch it as a sub-graph via `Send::toWorkflow()`.
+The payload becomes the child's **initial state** (parent state is not
+leaked), and each Send spawns its own isolated child run.
+
+```php
+class LeadPipeline extends Workflow
+{
+    public function definition(): void
+    {
+        $this->addNode('enrich',   EnrichNode::class)
+             ->addNode('qualify',  QualifyNode::class)
+             ->addNode('classify', ClassifyNode::class)
+             ->transition(Workflow::START, 'enrich')
+             ->transition('enrich',   'qualify')
+             ->transition('qualify',  'classify')
+             ->transition('classify', Workflow::END);
+    }
+}
+
+class FanoutPipeline extends Workflow
+{
+    public function definition(): void
+    {
+        $this->addNode('per_lead', app(LeadPipeline::class))
+             ->addNode('barrier',  new BarrierNode())
+             ->branch(Workflow::START, fn($s) => collect($s['lead_ids'])->map(
+                 fn($id) => Send::toWorkflow('per_lead', ['lead_id' => $id])
+             )->all(), ['per_lead'])
+             ->transition('per_lead', 'barrier')
+             ->transition('barrier',  Workflow::END);
+    }
+}
+```
+
+Why a sub-workflow rather than chaining sibling nodes in the parent? `Send`
+payloads are per-job and don't propagate through subsequent static edges
+(`enrich → qualify` would see `payload = null`). Inside a child workflow the
+payload becomes state, so `enrich` writes to state and `qualify` sees it on
+the next hop — no payload-threading needed.
+
+**3. Parent supervises long-running children.** Same shape as (2), but use
+`cascadeFailure(false)` on the child workflow when you want a map-reduce style
+aggregate where one child's failure shouldn't fail the whole run. See
+[Sub-graph Workflows](#sub-graph-workflows) below.
 
 ---
 
@@ -403,14 +475,20 @@ class ConfidenceCheckNode implements Node
 }
 ```
 
-You can also pass state mutations to persist before pausing:
+You can also pass state mutations to persist before pausing, and surface a
+human-readable gate reason that rides on the engine's `routing` column (not
+`$state`):
 
 ```php
 throw new NodePausedException(
-    nodeName: $context->nodeName,
-    stateMutation: ['gate_reason' => 'Score too low'],
+    nodeName:      $context->nodeName,
+    stateMutation: ['draft_attempt' => ($state['draft_attempt'] ?? 0) + 1],
+    gateReason:    'Score too low — human review required',
 );
 ```
+
+The `HumanInterventionRequired` event fires with `(runId, nodeName, gateReason)`.
+Gate reason is also readable on the paused run via `$run->routing['gate_reason']`.
 
 ---
 
@@ -478,9 +556,17 @@ $run->nodeExecutions->sum(fn($e) => $e->tags['cost_usd'] ?? 0);
 $run->nodeExecutions
     ->groupBy('node_name')
     ->map(fn($execs) => $execs->sum(fn($e) => $e->tags['cost_usd'] ?? 0));
+
+// Failed executions only
+$run->nodeExecutions->filter(fn($e) => $e->failed());
 ```
 
-`NodeExecution` columns: `run_id`, `node_name`, `attempt`, `tags` (JSON), `executed_at`.
+`NodeExecution` columns: `run_id`, `node_name`, `attempt`, `tags` (JSON),
+`executed_at`, `error_class`, `error_message`, `error_trace`, `failed_at`.
+
+When a node fails after exhausting retries, the engine writes exactly one row
+with the error columns populated — no polluting `state.error` or parsing
+Laravel logs.
 
 ### HasRetryPolicy
 
@@ -620,7 +706,14 @@ $this->addNode('approve', new GateNode(reason: 'Manager approval required'))
      ->transition('approve', 'publish');
 ```
 
-When the gate triggers, `state['gate_reason']` is set to the reason string. Resume via `Laragraph::resume($runId)`.
+When the gate triggers, a `HumanInterventionRequired` event fires with the
+reason. The reason is also stored on `$run->routing['gate_reason']` (engine
+state — not merged into `$state`). Resume via `Laragraph::resume($runId)`.
+
+> `GateNode` is a one-shot pause: its `handle()` unconditionally throws. For
+> human-in-the-loop checkpoints where you still want the node's side effects
+> to run first, use `interruptAfter()` on a regular node instead — see
+> [Human-in-the-Loop](#human-in-the-loop).
 
 ### SendNode
 
@@ -729,53 +822,120 @@ composer require prism-php/prism
 
 ### PrismNode
 
-A concrete, configurable LLM node. No subclass needed for common use cases:
+A general-purpose LLM node. Supports text generation and structured output —
+**no tool loop injected by default**. Use `PrismToolNode` (below) when you
+want tool-calling with automatic re-entry.
 
 ```php
 use Cainy\Laragraph\Integrations\Prism\PrismNode;
 use Prism\Prism\Enums\Provider;
-use Prism\Prism\Tool;
 
-class MyPipeline extends Workflow
-{
-    public function definition(): void
-    {
-        $this->addNode('agent', new PrismNode(
-                 provider:     Provider::Anthropic,
-                 model:        'claude-sonnet-4-6',
-                 systemPrompt: 'You are a helpful assistant.',
-                 maxTokens:    1024,
-                 tools: [
-                     (new Tool)
-                         ->as('get_weather')
-                         ->for('Get weather for a city')
-                         ->withStringParameter('city', 'City name')
-                         ->using(fn(string $city): string => "Sunny, 22°C in {$city}"),
-                 ],
-             ))
-             ->transition(Workflow::START, 'agent')
-             ->transition('agent', Workflow::END);
-    }
-}
+$this->addNode('assistant', new PrismNode(
+    provider:     Provider::Anthropic,
+    model:        'claude-sonnet-4-6',
+    systemPrompt: 'You are a helpful assistant.',
+    maxTokens:    1024,
+));
 ```
 
-`PrismNode` serializes Prism `Message` objects to/from plain arrays for state storage and returns the assistant's response appended to `state['messages']`.
+By default the assistant's response is appended to `state['messages']`.
 
-Override `getPrompt()` or `tools()` for dynamic behaviour:
+#### Overridable hooks
+
+Subclass when you need dynamic behaviour or structured output:
 
 ```php
-class ResearchAgent extends PrismNode
+use Prism\Prism\Contracts\Schema;
+use Prism\Prism\Schema\ObjectSchema;
+use Prism\Prism\Schema\StringSchema;
+
+class ClassifierNode extends PrismNode
 {
-    protected function getPrompt(array $state): string
+    protected function systemPrompt(array $state): string
     {
-        return 'Research: ' . $state['topic'];
+        return 'Classify the input into category + confidence.';
+    }
+
+    protected function prompt(array $state): string
+    {
+        return "Input: {$state['text']}";
+    }
+
+    protected function schema(): ?Schema
+    {
+        return new ObjectSchema(
+            name: 'classification',
+            description: 'Result of the classification',
+            properties: [
+                new StringSchema('category', 'category'),
+                new StringSchema('confidence', 'confidence 0..1'),
+            ],
+            requiredFields: ['category', 'confidence'],
+        );
+    }
+
+    public function outputKey(): string
+    {
+        return 'classification'; // default: 'output'
     }
 }
 ```
 
-### ToolNode
+When `schema()` returns non-null, the node calls Prism's structured-output path
+and writes the result to `state[outputKey()]` instead of `state['messages']`.
 
-Abstract base for nodes that manually execute tool calls from `state['messages']`. Implement `toolMap()` to return a map of tool names to callables:
+Available overrides: `provider()`, `model()`, `maxTokens()`, `temperature()`,
+`topP()`, `systemPrompt($state)`, `prompt($state)`, `messages($state)`,
+`tools()`, `schema()`, `messagesKey()`, `outputKey()`, `applyProviderOptions()`.
+
+### PrismToolNode
+
+Extends `PrismNode` and implements `HasLoop` — the compiler injects a
+synthetic `.__loop__` tool-executor so the node re-enters itself after each
+tool call completes (classic ReAct loop).
+
+```php
+use Cainy\Laragraph\Integrations\Prism\PrismToolNode;
+use Prism\Prism\Tool;
+
+class WeatherAgent extends PrismToolNode
+{
+    public function tools(): array
+    {
+        return [
+            (new Tool)
+                ->as('get_weather')
+                ->for('Get weather for a city')
+                ->withStringParameter('city', 'City name')
+                ->using(fn(string $city): string => "Sunny, 22°C in {$city}"),
+        ];
+    }
+}
+
+$this->addNode('agent', new WeatherAgent(
+    provider: Provider::Anthropic,
+    model:    'claude-sonnet-4-6',
+));
+```
+
+The injected graph:
+
+```
+START → agent ──(tool_calls present)──→ agent.__loop__ → agent
+               ──(no tool_calls)──────→ END
+```
+
+To interrupt before tool execution runs:
+
+```php
+->interruptBefore(Workflow::toolNode('agent'))
+```
+
+### ToolNode (manual routing)
+
+Abstract base for nodes that execute tool calls from `state['messages']`
+without the automatic loop. Use when you want explicit edges around tool
+execution (for conditional routing, logging, approval gates, etc.).
 
 ```php
 use Cainy\Laragraph\Integrations\Prism\ToolNode;
@@ -792,33 +952,14 @@ class WeatherToolNode extends ToolNode
 }
 ```
 
-Tool results are appended to `state['messages']` in Prism's `tool_result` format.
-
-### Automatic Tool Loops
-
-`PrismNode` implements `HasLoop`. When a node has tools, calling `->compile()` automatically injects a tool execution loop:
-
-```
-START → agent ──(tool calls present)──→ agent.__loop__ → agent
-               ──(no tool calls)──────→ END
-```
-
-To interrupt before tool execution runs:
-
-```php
-->interruptBefore(Workflow::toolNode('agent'))
-```
-
-### Manual Tool Routing
-
-For full control, skip `HasLoop` and wire edges explicitly:
+Wire the edges yourself:
 
 ```php
 $this->addNode('agent', MyAgentNode::class)
      ->addNode('tools', WeatherToolNode::class)
      ->transition(Workflow::START, 'agent')
-     ->transition('agent', 'tools', fn($s) => ! empty($s['messages'][array_key_last($s['messages'])]['tool_calls'] ?? []))
-     ->transition('agent', Workflow::END, fn($s) => empty($s['messages'][array_key_last($s['messages'])]['tool_calls'] ?? []))
+     ->transition('agent', 'tools', fn($s) => ! empty(end($s['messages'])['tool_calls'] ?? []))
+     ->transition('agent', Workflow::END, fn($s) => empty(end($s['messages'])['tool_calls'] ?? []))
      ->transition('tools', 'agent');
 ```
 
@@ -947,24 +1088,79 @@ $run->parent;    // ?WorkflowRun
 $run->children;  // Collection<WorkflowRun>
 ```
 
+### Embedded vs Send-dispatched
+
+Sub-graphs behave differently depending on how they're reached:
+
+| Reached via | Child initial state | Delta merged back |
+|---|---|---|
+| Embedded (`transition('sub', …)`) | Parent's full state | Child's state diff vs parent's state |
+| `Send::toWorkflow('sub', $payload)` | The Send payload only | Child's full final state |
+
+Use `Send::toWorkflow()` for per-item pipelines where parent state should not
+leak into the child. Use plain embedding when the child should see and operate
+on parent state (e.g. a reusable "research this topic" sub-graph).
+
+### Child Failure Cascade
+
+By default, when a child workflow fails, the failure cascades to the parent:
+the parent is marked `Failed`, its pointers are cleared, and `WorkflowFailed`
+fires with the child's exception.
+
+Opt out on a per-child-workflow basis by overriding `shouldCascadeFailure()`:
+
+```php
+class ToleratingChildWorkflow extends Workflow
+{
+    public function shouldCascadeFailure(): bool
+    {
+        return false; // parent stays Paused; caller can decide what to do
+    }
+
+    public function definition(): void { /* ... */ }
+}
+```
+
+Useful for map-reduce patterns where individual child failures should be
+aggregated rather than fatal.
+
+### Accessing parent metadata from a child
+
+Inside a child node, use the context accessors:
+
+```php
+public function handle(NodeExecutionContext $context, array $state): array
+{
+    $profileId = $context->parentMetadata()['profile_id'] ?? null;
+    // ...
+}
+```
+
+`$context->parentRunId`, `$context->parentNodeName`, and `$context->parentMetadata()`
+are all null at the top level.
+
 ---
 
 ## Recursion Limit
 
 The engine tracks total node executions per run and throws `RecursionLimitExceeded` if the limit is hit.
 
-The default limit is `config('laragraph.recursion_limit', 25)`. Override it per workflow:
+The default limit is `config('laragraph.recursion_limit', 100)`. Override it per workflow:
 
 ```php
 class MyPipeline extends Workflow
 {
     public function definition(): void
     {
-        $this->withRecursionLimit(100);
+        $this->withRecursionLimit(500);
         // ...
     }
 }
 ```
+
+For legitimate fan-out workflows (e.g. 50 items, each running a 5-step
+pipeline), raise this to `items × steps` + headroom. The exception message
+includes a hint pointing at `->withRecursionLimit()` when the limit is hit.
 
 ---
 
@@ -981,6 +1177,7 @@ LaraGraph fires events throughout the workflow lifecycle. All events implement `
 | `WorkflowCompleted` | `runId`, `workflowKey` |
 | `WorkflowFailed` | `runId`, `exception`, `workflowKey` |
 | `WorkflowResumed` | `runId`, `workflowKey` |
+| `HumanInterventionRequired` | `runId`, `nodeName`, `reason` |
 
 ### Broadcasting
 
@@ -1018,7 +1215,7 @@ return [
     'node_timeout' => 60,
 
     // Maximum node executions per run before RecursionLimitExceeded is thrown
-    'recursion_limit' => 25,
+    'recursion_limit' => 100,
 
     // Prune completed/failed runs older than this many days
     'prunable_after_days' => 30,

@@ -4,6 +4,7 @@ namespace Cainy\Laragraph;
 
 use Cainy\Laragraph\Builder\CompiledWorkflow;
 use Cainy\Laragraph\Builder\Workflow;
+use Cainy\Laragraph\Engine\Concerns\ManagesRouting;
 use Cainy\Laragraph\Engine\Concerns\ManagesState;
 use Cainy\Laragraph\Engine\Concerns\TracksPointers;
 use Cainy\Laragraph\Engine\ExecuteNode;
@@ -21,7 +22,7 @@ use Throwable;
 
 readonly class Laragraph
 {
-    use ManagesState, TracksPointers;
+    use ManagesRouting, ManagesState, TracksPointers;
 
     /**
      * Start a new workflow run.
@@ -93,12 +94,75 @@ readonly class Laragraph
     }
 
     /**
+     * Fail a parent run in response to a child workflow failure. Marks the
+     * parent Failed, records the child's exception on the parent's routing
+     * column, clears pointers, and fires WorkflowFailed for the parent.
+     *
+     * Callers: CascadeChildFailure listener, after checking the parent's
+     * sub-graph node opts into cascading.
+     *
+     * @throws Throwable
+     */
+    public function failFromChild(int $parentRunId, string $parentNodeName, Throwable $childException): void
+    {
+        $workflowKey = '';
+        $shouldFire = false;
+
+        DB::transaction(function () use ($parentRunId, $parentNodeName, $childException, &$workflowKey, &$shouldFire): void {
+            /** @var WorkflowRun|null $parent */
+            $parent = WorkflowRun::lockForUpdate()->find($parentRunId);
+            if ($parent === null) {
+                return;
+            }
+
+            if ($parent->status === RunStatus::Completed || $parent->status === RunStatus::Failed) {
+                return;
+            }
+
+            $workflowKey = $parent->key ?? '';
+
+            $this->setErrorSummary($parent, [
+                'node' => $parentNodeName,
+                'class' => get_class($childException),
+                'message' => $childException->getMessage(),
+                'file' => $childException->getFile(),
+                'line' => $childException->getLine(),
+                'from_child' => true,
+            ]);
+
+            $parent->active_pointers = [];
+            $parent->status = RunStatus::Failed;
+            $parent->save();
+
+            $shouldFire = true;
+        });
+
+        if (! $shouldFire) {
+            return;
+        }
+
+        Event::dispatch(new WorkflowFailed($parentRunId, $childException, $workflowKey));
+
+        // Fire the parent workflow's onFailed hook if bound.
+        try {
+            if ($workflowKey !== '') {
+                $parent = WorkflowRun::find($parentRunId);
+                if ($parent !== null) {
+                    app($workflowKey)->onFailed($parent, $childException);
+                }
+            }
+        } catch (Throwable) {
+            // best-effort
+        }
+    }
+
+    /**
      * Resume a parent run from a completed child workflow.
      * Sets the parent back to Running and re-dispatches the waiting node.
      *
      * @throws Throwable
      */
-    public function resumeFromChild(int $parentRunId, string $parentNodeName): void
+    public function resumeFromChild(int $parentRunId, string $parentNodeName, ?int $childRunId = null): void
     {
         $workflowKey = '';
 
@@ -124,7 +188,15 @@ readonly class Laragraph
         Event::dispatch(new WorkflowResumed($parentRunId, $workflowKey));
 
         $compiled = $workflowKey !== '' ? $this->hydrateWorkflowByKey($workflowKey) : null;
-        ExecuteNode::dispatchNode($parentRunId, $parentNodeName, null, $compiled);
+
+        // Carry the completed child's id on the resumed payload so the
+        // sub-workflow node can identify which child just finished. This is
+        // required when multiple concurrent Sends dispatch to the same
+        // sub-workflow node (per-item fan-out) — routing.child_runs can't hold
+        // a scalar in that case.
+        $payload = $childRunId !== null ? ['__resume_child_run_id' => $childRunId] : null;
+
+        ExecuteNode::dispatchNode($parentRunId, $parentNodeName, $payload, $compiled);
     }
 
     /**
@@ -244,21 +316,15 @@ readonly class Laragraph
      */
     private function pushTargetPointers(WorkflowRun $run, array $targets): void
     {
-        $state = $run->state;
-
         foreach ($targets as $target) {
             if ($target instanceof Send) {
                 $this->pushPointers($run, $target->nodeName);
-                $spawnKey = '__expected_spawns_for_'.$target->nodeName;
-                $state[$spawnKey] = ($state[$spawnKey] ?? 0) + 1;
+                $this->incrementExpectedSpawns($run, $target->nodeName);
             } elseif ($target !== Workflow::END) {
                 $this->pushPointers($run, $target);
-                $spawnKey = '__expected_spawns_for_'.$target;
-                $state[$spawnKey] = ($state[$spawnKey] ?? 0) + 1;
+                $this->incrementExpectedSpawns($run, $target);
             }
         }
-
-        $run->state = $state;
     }
 
     /**

@@ -9,6 +9,7 @@ use Cainy\Laragraph\Contracts\HasQueue;
 use Cainy\Laragraph\Contracts\HasRetryPolicy;
 use Cainy\Laragraph\Contracts\HasTags;
 use Cainy\Laragraph\Contracts\IsFanInBarrier;
+use Cainy\Laragraph\Engine\Concerns\ManagesRouting;
 use Cainy\Laragraph\Engine\Concerns\ManagesState;
 use Cainy\Laragraph\Engine\Concerns\TracksPointers;
 use Cainy\Laragraph\Enums\RunStatus;
@@ -38,7 +39,7 @@ use Throwable;
 class ExecuteNode implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-    use ManagesState, TracksPointers;
+    use ManagesRouting, ManagesState, TracksPointers;
 
     public int $tries;
 
@@ -145,7 +146,7 @@ class ExecuteNode implements ShouldQueue
         $workflow = $this->hydrateWorkflow($run);
         $reducer = $workflow->getReducer();
 
-        $interruptMarker = $run->state['__interrupt'] ?? null;
+        $interruptMarker = $this->interruptMarker($run);
         $resumingAfter = $interruptMarker === $this->nodeName
             && $workflow->shouldInterruptAfter($this->nodeName);
 
@@ -169,7 +170,7 @@ class ExecuteNode implements ShouldQueue
                     if ($run->status === RunStatus::Failed || $run->status === RunStatus::Paused) {
                         return;
                     }
-                    $run->state = array_merge($run->state, ['__interrupt' => $this->nodeName]);
+                    $this->setInterruptMarker($run, $this->nodeName);
                     $run->status = RunStatus::Paused;
                     $run->save();
                 });
@@ -197,8 +198,8 @@ class ExecuteNode implements ShouldQueue
                     $predecessors = $workflow->getIncomingNodesFor($this->nodeName);
 
                     foreach ($predecessors as $predecessor) {
-                        $expected = $contextRun->state['__expected_spawns_for_'.$predecessor] ?? 0;
-                        $completed = $contextRun->state['__completed_spawns_for_'.$predecessor] ?? 0;
+                        $expected = $this->expectedSpawns($contextRun, $predecessor);
+                        $completed = $this->completedSpawns($contextRun, $predecessor);
 
                         if ($expected === 0 || $completed < $expected) {
                             $this->removePointer($contextRun, $this->nodeName);
@@ -287,10 +288,10 @@ class ExecuteNode implements ShouldQueue
 
             if ($resumingAfter) {
                 $newState = $freshRun->state;
-                unset($newState['__interrupt']);
+                $this->setInterruptMarker($freshRun, null);
             } else {
                 // Detect direct-Send returns (e.g. SendNode).
-                $directSends = is_array($mutation) && ! empty($mutation) && array_is_list($mutation)
+                $directSends = ! empty($mutation) && array_is_list($mutation)
                     && count(array_filter($mutation, fn ($v) => $v instanceof Send)) === count($mutation)
                     ? $mutation
                     : [];
@@ -300,7 +301,7 @@ class ExecuteNode implements ShouldQueue
                 } else {
                     $newState = $freshRun->state;
                 }
-                unset($newState['__interrupt']);
+                $this->setInterruptMarker($freshRun, null);
                 $freshRun->state = $newState;
 
                 $tags = $node instanceof HasTags ? $node->tags() : [];
@@ -324,8 +325,8 @@ class ExecuteNode implements ShouldQueue
 
                 // interrupt_after: pause after node ran, before edges evaluate.
                 if ($workflow->shouldInterruptAfter($this->nodeName)) {
-                    $newState['__interrupt'] = $this->nodeName;
                     $freshRun->state = $newState;
+                    $this->setInterruptMarker($freshRun, $this->nodeName);
                     $freshRun->current = $this->nodeName;
                     $freshRun->status = RunStatus::Paused;
                     $freshRun->save();
@@ -338,16 +339,9 @@ class ExecuteNode implements ShouldQueue
 
                     // Record expected spawn counts per target so downstream barriers
                     // know exactly how many workers to wait for.
-                    $sendsByNode = [];
                     foreach ($directSends as $send) {
-                        $sendsByNode[$send->nodeName] = ($sendsByNode[$send->nodeName] ?? 0) + 1;
+                        $this->incrementExpectedSpawns($freshRun, $send->nodeName);
                     }
-                    $spawnState = $freshRun->state;
-                    foreach ($sendsByNode as $targetNode => $count) {
-                        $spawnKey = '__expected_spawns_for_'.$targetNode;
-                        $spawnState[$spawnKey] = ($spawnState[$spawnKey] ?? 0) + $count;
-                    }
-                    $freshRun->state = $spawnState;
 
                     $this->finalizePointers($freshRun, $nextTargets, $completed, $parentRunId, $parentNodeName);
 
@@ -357,9 +351,7 @@ class ExecuteNode implements ShouldQueue
 
             // Record that this node has committed its result so downstream barriers
             // can count completions against the expected spawn totals.
-            $trackedState = $freshRun->state;
-            $completionKey = '__completed_spawns_for_'.$this->nodeName;
-            $trackedState[$completionKey] = ($trackedState[$completionKey] ?? 0) + 1;
+            $this->incrementCompletedSpawns($freshRun, $this->nodeName);
 
             $nextTargets = $workflow->resolveNextNodes($this->nodeName, $newState);
 
@@ -368,15 +360,11 @@ class ExecuteNode implements ShouldQueue
             // each dispatch one worker job; normal string targets dispatch one job each.
             foreach ($nextTargets as $target) {
                 if ($target instanceof Send) {
-                    $spawnKey = '__expected_spawns_for_'.$target->nodeName;
+                    $this->incrementExpectedSpawns($freshRun, $target->nodeName);
                 } elseif ($target !== Workflow::END) {
-                    $spawnKey = '__expected_spawns_for_'.$target;
-                } else {
-                    continue;
+                    $this->incrementExpectedSpawns($freshRun, $target);
                 }
-                $trackedState[$spawnKey] = ($trackedState[$spawnKey] ?? 0) + 1;
             }
-            $freshRun->state = $trackedState;
 
             $this->finalizePointers($freshRun, $nextTargets, $completed, $parentRunId, $parentNodeName);
         });
@@ -386,7 +374,7 @@ class ExecuteNode implements ShouldQueue
             $this->fireCompletedHook($workflowKey);
 
             if ($parentRunId !== null && $parentNodeName !== null) {
-                app(Laragraph::class)->resumeFromChild($parentRunId, $parentNodeName);
+                app(Laragraph::class)->resumeFromChild($parentRunId, $parentNodeName, $this->runId);
             }
 
             return;
@@ -437,7 +425,7 @@ class ExecuteNode implements ShouldQueue
             $this->fireCompletedHook($workflowKey);
 
             if ($parentRunId !== null && $parentNodeName !== null) {
-                app(Laragraph::class)->resumeFromChild($parentRunId, $parentNodeName);
+                app(Laragraph::class)->resumeFromChild($parentRunId, $parentNodeName, $this->runId);
             }
         }
     }
@@ -452,7 +440,28 @@ class ExecuteNode implements ShouldQueue
             $run = WorkflowRun::lockForUpdate()->findOrFail($this->runId);
             $workflowKey = $run->key ?? '';
 
-            $run->state = array_merge($run->state, $e->stateMutation, ['__interrupt' => $this->nodeName]);
+            // A cascaded child failure may have already marked this run Failed
+            // (sync queue: child runs and fails before we unwind to commit the
+            // pause). Don't overwrite the terminal Failed state with Paused.
+            if ($run->status === RunStatus::Failed || $run->status === RunStatus::Completed) {
+                return;
+            }
+
+            if (! empty($e->stateMutation)) {
+                $reducer = $this->hydrateWorkflow($run)->getReducer();
+                $this->applyMutation($run, $e->stateMutation, $reducer);
+            }
+
+            $this->setInterruptMarker($run, $this->nodeName);
+
+            if ($e->gateReason !== null) {
+                $this->setGateReason($run, $e->gateReason);
+            }
+
+            if ($e->childRunId !== null && $e->childRunIdIsPersistable) {
+                $this->setChildRunId($run, $this->nodeName, $e->childRunId);
+            }
+
             $run->status = RunStatus::Paused;
             $run->save();
         });
@@ -460,16 +469,14 @@ class ExecuteNode implements ShouldQueue
         Event::dispatch(new HumanInterventionRequired(
             $this->runId,
             $this->nodeName,
-            $e->stateMutation['gate_reason'] ?? null,
+            $e->gateReason,
         ));
 
         // If a child workflow already completed (sync queue), resume immediately.
-        $childRunKey = "__child_run_{$this->nodeName}";
-        $childRunId = $e->stateMutation[$childRunKey] ?? null;
-        if ($childRunId !== null) {
-            $childRun = WorkflowRun::find($childRunId);
+        if ($e->childRunId !== null) {
+            $childRun = WorkflowRun::find($e->childRunId);
             if ($childRun?->status === RunStatus::Completed) {
-                app(Laragraph::class)->resumeFromChild($this->runId, $this->nodeName);
+                app(Laragraph::class)->resumeFromChild($this->runId, $this->nodeName, $e->childRunId);
             }
         }
     }
@@ -588,23 +595,42 @@ class ExecuteNode implements ShouldQueue
                 return;
             }
 
-            $reducer = $this->hydrateWorkflow($run)->getReducer();
-            $this->applyMutation($run, [
-                'error' => [
-                    'node' => $this->nodeName,
-                    'message' => $root->getMessage(),
-                    'file' => $root->getFile(),
-                    'line' => $root->getLine(),
-                ],
-            ], $reducer);
+            $this->setErrorSummary($run, [
+                'node' => $this->nodeName,
+                'class' => get_class($root),
+                'message' => $root->getMessage(),
+                'file' => $root->getFile(),
+                'line' => $root->getLine(),
+            ]);
 
             $this->removePointer($run, $this->nodeName);
 
             $run->status = RunStatus::Failed;
             $run->save();
+
+            $this->recordFailedExecution($root);
         });
 
         return $workflowKey;
+    }
+
+    /**
+     * Persist a failed execution row on workflow_node_executions. Runs inside
+     * the markFailed() transaction so state and the failure row commit atomically.
+     */
+    private function recordFailedExecution(Throwable $root): void
+    {
+        NodeExecution::create([
+            'run_id' => $this->runId,
+            'node_name' => $this->nodeName,
+            'attempt' => $this->attempts(),
+            'tags' => null,
+            'executed_at' => now(),
+            'error_class' => get_class($root),
+            'error_message' => $root->getMessage(),
+            'error_trace' => $root->getTraceAsString(),
+            'failed_at' => now(),
+        ]);
     }
 
     private function fireCompletedHook(string $workflowKey): void

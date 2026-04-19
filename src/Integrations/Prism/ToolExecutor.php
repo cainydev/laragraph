@@ -24,8 +24,11 @@ final class ToolExecutor implements HasName, Node
     {
         $parent = app($this->parentNodeClass);
         $tools = $parent->tools();
+        $messagesKey = method_exists($parent, 'messagesKey')
+            ? (string) $parent->messagesKey()
+            : 'messages';
 
-        $messages = $state['messages'] ?? [];
+        $messages = $state[$messagesKey] ?? [];
         $lastMessage = ! empty($messages) ? end($messages) : null;
 
         if ($lastMessage === null || empty($lastMessage['tool_calls'])) {

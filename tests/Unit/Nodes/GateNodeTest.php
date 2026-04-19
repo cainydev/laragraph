@@ -11,13 +11,14 @@ it('throws NodePausedException', function () {
     expect(fn () => $node->handle(makeContext(), []))->toThrow(NodePausedException::class);
 });
 
-it('stores gate_reason in state mutation', function () {
+it('surfaces gate reason on the paused exception', function () {
     $node = new GateNode('Manager approval required');
 
     try {
         $node->handle(makeContext(), []);
     } catch (NodePausedException $e) {
-        expect($e->stateMutation['gate_reason'])->toBe('Manager approval required');
+        expect($e->gateReason)->toBe('Manager approval required');
+        expect($e->stateMutation)->toBe([]);
     }
 });
 
@@ -27,6 +28,6 @@ it('uses default reason when none given', function () {
     try {
         $node->handle(makeContext(), []);
     } catch (NodePausedException $e) {
-        expect($e->stateMutation['gate_reason'])->toBe('Approval required');
+        expect($e->gateReason)->toBe('Approval required');
     }
 });

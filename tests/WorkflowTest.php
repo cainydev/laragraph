@@ -80,7 +80,7 @@ it('error-recovery fails on first attempt then succeeds after resume with attemp
 
     $run = WorkflowRun::latest()->first();
     expect($run->fresh()->status)->toBe(RunStatus::Failed);
-    expect($run->fresh()->state)->toHaveKey('error');
+    expect($run->fresh()->routing)->toHaveKey('error');
 
     $run2 = Laragraph::run(ErrorRecoveryWorkflow::class, ['attempt' => 2]);
 

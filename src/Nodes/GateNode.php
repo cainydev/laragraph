@@ -19,7 +19,7 @@ final class GateNode implements Node
     {
         throw new NodePausedException(
             nodeName: $context->nodeName,
-            stateMutation: ['gate_reason' => $this->reason],
+            gateReason: $this->reason,
         );
     }
 }

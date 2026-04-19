@@ -34,6 +34,8 @@ class Workflow implements HasName, Node
     /** @var string[] */
     private array $interruptAfter = [];
 
+    private ?bool $cascadeFailureOverride = null;
+
     public function name(): string
     {
         return static::class;
@@ -46,28 +48,69 @@ class Workflow implements HasName, Node
      */
     public function handle(NodeExecutionContext $context, array $state): array
     {
-        $childRunKey = "__child_run_{$context->nodeName}";
-        $childRunId = $state[$childRunKey] ?? null;
+        // Resume path: a completed child run id is carried on the resumed
+        // payload (Laragraph::resumeFromChild). This works even for concurrent
+        // per-item Sends sharing the same sub-workflow node.
+        $resumeChildRunId = $context->payload('__resume_child_run_id');
+
+        // Fallback: gate-style pause / non-Send embedding uses routing slot.
+        $routedChildRunId = $context->routing['child_runs'][$context->nodeName] ?? null;
+
+        $childRunId = $resumeChildRunId ?? $routedChildRunId;
 
         if ($childRunId === null) {
-            $childRun = app(Laragraph::class)->startChildWorkflow(
-                workflow: $this,
-                initialState: $state,
-                parentRunId: $context->runId,
-                parentNodeName: $context->nodeName,
-            );
+            // When dispatched via Send (per-item pipeline), the child seed is the
+            // isolated payload — not parent state. This implements the canonical
+            // "fan-out → per-item sub-workflow → barrier" shape without leaking
+            // parent state into the child.
+            $isSendDispatch = $context->isSendExecution();
+            $initialState = $isSendDispatch
+                ? ($context->isolatedPayload ?? [])
+                : $state;
 
+            // Dispatching a child may run it synchronously (sync queue). Swallow
+            // sync-failure propagation here — the child has already recorded its
+            // own Failed state via its failed() hook, and the cascade listener
+            // will handle propagating to the parent (if enabled).
+            try {
+                $childRun = app(Laragraph::class)->startChildWorkflow(
+                    workflow: $this,
+                    initialState: $initialState,
+                    parentRunId: $context->runId,
+                    parentNodeName: $context->nodeName,
+                );
+            } catch (\Throwable $e) {
+                $childRun = WorkflowRun::where('parent_run_id', $context->runId)
+                    ->where('parent_node_name', $context->nodeName)
+                    ->latest('id')
+                    ->first();
+
+                if ($childRun === null) {
+                    throw $e;
+                }
+            }
+
+            // For Send dispatches we don't persist the child id into the
+            // parent's routing slot (concurrent Sends would collide on the
+            // same key). We still surface it on the exception so the engine's
+            // sync-queue early-resume path can re-dispatch the correct child.
             throw new NodePausedException(
                 nodeName: $context->nodeName,
-                stateMutation: [$childRunKey => $childRun->id],
+                childRunId: $childRun->id,
+                childRunIdIsPersistable: ! $isSendDispatch,
             );
         }
 
         $childRun = WorkflowRun::findOrFail($childRunId);
-        $delta = $this->recursiveDiff($childRun->state, $state);
-        $delta[$childRunKey] = null;
 
-        return $delta;
+        // For Send-dispatched sub-workflows the child seed was the payload, not
+        // parent state — so the delta is the child's full final state (any key
+        // the child produced is new).
+        if ($resumeChildRunId !== null) {
+            return $childRun->state;
+        }
+
+        return $this->recursiveDiff($childRun->state, $state);
     }
 
     /**
@@ -185,6 +228,27 @@ class Workflow implements HasName, Node
         return $this;
     }
 
+    /**
+     * Fluent builder form — sets the cascade behaviour without requiring a subclass.
+     * Only meaningful when this Workflow is embedded as a node in another.
+     */
+    public function cascadeFailure(bool $cascade = true): static
+    {
+        $this->cascadeFailureOverride = $cascade;
+
+        return $this;
+    }
+
+    /**
+     * Whether a failure in this child workflow should propagate to the parent
+     * that embedded it. Defaults to true — override in subclasses for
+     * map-reduce patterns that aggregate partial child failures.
+     */
+    public function shouldCascadeFailure(): bool
+    {
+        return $this->cascadeFailureOverride ?? true;
+    }
+
     public function compile(): CompiledWorkflow
     {
         $this->nodes = [];
@@ -224,12 +288,6 @@ class Workflow implements HasName, Node
             $loopNodeName = $name.'.__loop__';
             $nodes[$loopNodeName] = $node->loopNode($name);
             $condition = $node->loopCondition();
-
-            if (! ($condition instanceof \Closure)) {
-                throw new \InvalidArgumentException(
-                    "HasLoop::loopCondition() on node [{$name}] must return a Closure. String expressions are no longer supported."
-                );
-            }
 
             // Guard existing edges FROM this node with the negated loop condition
             $edges = array_map(function (Edge|BranchEdge $edge) use ($name, $condition): Edge|BranchEdge {

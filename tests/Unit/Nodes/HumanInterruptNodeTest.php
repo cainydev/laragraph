@@ -11,12 +11,12 @@ it('throws NodePausedException', function () {
     expect(fn () => $node->handle(makeContext(), []))->toThrow(NodePausedException::class);
 });
 
-it('stores the reason in state mutation', function () {
+it('surfaces the reason on the paused exception', function () {
     $node = new GateNode('Manager approval needed');
 
     try {
         $node->handle(makeContext(), []);
     } catch (NodePausedException $e) {
-        expect($e->stateMutation['gate_reason'])->toBe('Manager approval needed');
+        expect($e->gateReason)->toBe('Manager approval needed');
     }
 });

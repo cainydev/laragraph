@@ -22,6 +22,7 @@ use Throwable;
  * @property string|null $key
  * @property array $state
  * @property array|null $metadata
+ * @property array $routing
  * @property RunStatus $status
  * @property string $current
  * @property array $active_pointers
@@ -40,6 +41,7 @@ class WorkflowRun extends Model
         'key',
         'state',
         'metadata',
+        'routing',
         'status',
         'current',
         'active_pointers',
@@ -48,6 +50,7 @@ class WorkflowRun extends Model
 
     protected $attributes = [
         'state' => '{}',
+        'routing' => '{}',
         'status' => RunStatus::Running->value,
         'current' => Workflow::START,
         'active_pointers' => '[]',
@@ -122,6 +125,7 @@ class WorkflowRun extends Model
         return [
             'state' => 'array',
             'metadata' => 'array',
+            'routing' => 'array',
             'status' => RunStatus::class,
             'active_pointers' => 'array',
         ];
